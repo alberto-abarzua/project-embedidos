@@ -19,10 +19,10 @@
 #define ACCEL_RAW_TO_G (8.000 / 32768.0)
 #define GYRO_RAW_TO_RAD_S (34.90659 / 32768.0)
 // SUSPEND,LOW_POWER,NORMAL,PERFORMANCE
-#define PM_NORMAL "NORMAL"
-#define PM_LOW_POWER "LOW_POWER"
-#define PM_SUSPEND "SUSPEND"
-#define PM_PERFORMANCE "PERFORMANCE"
+#define PM_NORMAL 101
+#define PM_LOW_POWER 102
+#define PM_SUSPEND 103
+#define PM_PERFORMANCE 104
 esp_err_t ret = ESP_OK;
 esp_err_t ret2 = ESP_OK;
 
@@ -854,12 +854,12 @@ void check_initialization(void) {
     }
 }
 
-
-void set_power_mode(char *mode) {
-    uint8_t reg_pwr_ctrl = 0x7D uint8_t reg_acc_conf =
-        0x40 uint8_t reg_gyr_conf = 0x42 uint8_t reg_pwr_conf =
-            0x7C uint8_t val_pwr_ctrl,
-            val_acc_conf, val_gyr_conf, val_pwr_conf;
+void set_power_mode(int mode) {
+    uint8_t reg_pwr_ctrl = 0x7D;
+    uint8_t reg_acc_conf = 0x40;
+    uint8_t reg_gyr_conf = 0x42;
+    uint8_t reg_pwr_conf = 0x7C;
+    uint8_t val_pwr_ctrl, val_acc_conf, val_gyr_conf, val_pwr_conf;
     switch (mode) {
         case PM_NORMAL:
             val_pwr_ctrl = 0x0E;
@@ -870,10 +870,7 @@ void set_power_mode(char *mode) {
         case PM_SUSPEND:
             /* code */
             break;
-        case PM_DEEP_SUSPEND:
-            /* code */
-            break;
-        case PM_STANDBY:
+        case PM_PERFORMANCE:
             /* code */
             break;
         case PM_LOW_POWER:
