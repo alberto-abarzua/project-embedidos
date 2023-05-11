@@ -12,7 +12,7 @@
 // I2C pin configurations
 #define I2C_MASTER_SCL_IO GPIO_NUM_22
 #define I2C_MASTER_SDA_IO GPIO_NUM_21
-
+#define I2C_MASTER_NUM I2C_NUM_0
 // I2C frequency (Hz)
 #define I2C_MASTER_FREQ_HZ 10000
 
@@ -779,7 +779,7 @@ esp_err_t bmi_write(i2c_port_t i2c_num, uint8_t *data_addres, uint8_t *data_wr,
 }
 
 esp_err_t bmi_init(void) {
-    int i2c_master_port = I2C_NUM_0;
+    int i2c_master_port = I2C_MASTER_NUM;
     i2c_config_t conf;
     conf.mode = I2C_MODE_MASTER;
     conf.sda_io_num = I2C_MASTER_SDA_IO;
@@ -799,7 +799,7 @@ esp_err_t bmi_init(void) {
 void chipid(void) {
     uint8_t tmp;
 
-    bmi_read(I2C_NUM_0, &REG_ID, &tmp, 1);
+    bmi_read(I2C_MASTER_NUM, &REG_ID, &tmp, 1);
     printf("Value of CHIP_ID: %2X \n\n", tmp);
     if (tmp == 0x24) {
         printf("Chip Recognized\n\n");
@@ -813,7 +813,7 @@ void chipid(void) {
 void softreset(void) {
     uint8_t reg_softreset = 0x7E, val_softreset = 0xB6;
 
-    esp_err_t ret = bmi_write(I2C_NUM_0, &reg_softreset, &val_softreset, 1);
+    esp_err_t ret = bmi_write(I2C_MASTER_NUM, &reg_softreset, &val_softreset, 1);
     vTaskDelay(1000 / portTICK_PERIOD_MS);
     if (ret != ESP_OK) {
         printf("\nError in softreset: %s \n", esp_err_to_name(ret));
@@ -829,15 +829,15 @@ esp_err_t initialization(void) {
 
     printf("Initializing ...\n");
 
-    bmi_write(I2C_NUM_0, &REG_PWR_CONF_ADVPOWERSAVE, &val_pwr_conf_advpowersave,
+    bmi_write(I2C_MASTER_NUM, &REG_PWR_CONF_ADVPOWERSAVE, &val_pwr_conf_advpowersave,
               1);
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
-    esp_err_t ret = bmi_write(I2C_NUM_0, &REG_INIT_CTRL, &val_init_ctrl, 1);
+    esp_err_t ret = bmi_write(I2C_MASTER_NUM, &REG_INIT_CTRL, &val_init_ctrl, 1);
 
     int config_size = sizeof(bmi270_config_file);
-    ret = bmi_write(I2C_NUM_0, &REG_INIT_DATA, (uint8_t *)bmi270_config_file,
+    ret = bmi_write(I2C_MASTER_NUM, &REG_INIT_DATA, (uint8_t *)bmi270_config_file,
                     config_size);
     if (ret != ESP_OK) {
         printf("\nErorr loding config_file\n");
@@ -847,7 +847,7 @@ esp_err_t initialization(void) {
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
-    ret = bmi_write(I2C_NUM_0, &REG_INIT_CTRL, &val_init_ctrl2, 1);
+    ret = bmi_write(I2C_MASTER_NUM, &REG_INIT_CTRL, &val_init_ctrl2, 1);
 
     if (ret != ESP_OK) {
         printf("\nError in initialization: %s \n", esp_err_to_name(ret));
@@ -861,7 +861,7 @@ esp_err_t initialization(void) {
 void internal_status(void) {
     uint8_t tmp;
 
-    bmi_read(I2C_NUM_0, &REG_INTERNAL_STATUS, &tmp, 1);
+    bmi_read(I2C_MASTER_NUM, &REG_INTERNAL_STATUS, &tmp, 1);
     printf("Internal Status: %2X\n\n", tmp);
 }
 
@@ -870,7 +870,7 @@ void check_initialization(void) {
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
-    bmi_read(I2C_NUM_0, &REG_INTERNAL_STATUS, &tmp, 1);
+    bmi_read(I2C_MASTER_NUM, &REG_INTERNAL_STATUS, &tmp, 1);
     printf("Init_status.0: %x \n", (tmp & 0b00001111));
     if ((tmp & 0b00001111) == 1) {
         printf("Comprobacion Inicializacion: OK\n\n");
@@ -909,21 +909,21 @@ void set_power_mode(int mode) {
             // error
             break;
     }
-    bmi_write(I2C_NUM_0, &REG_PWR_CTRL, &val_pwr_ctrl, 1);
-    bmi_write(I2C_NUM_0, &REG_ACC_CONF, &val_acc_conf, 1);
-    bmi_write(I2C_NUM_0, &REG_GYR_CONF, &val_gyr_conf, 1);
-    bmi_write(I2C_NUM_0, &REG_PWR_CONF, &val_pwr_conf, 1);
+    bmi_write(I2C_MASTER_NUM, &REG_PWR_CTRL, &val_pwr_ctrl, 1);
+    bmi_write(I2C_MASTER_NUM, &REG_ACC_CONF, &val_acc_conf, 1);
+    bmi_write(I2C_MASTER_NUM, &REG_GYR_CONF, &val_gyr_conf, 1);
+    bmi_write(I2C_MASTER_NUM, &REG_PWR_CONF, &val_pwr_conf, 1);
 }
 
 esp_err_t check_power_mode(void) {
     uint8_t tmp, tmp2;
-    esp_err_t ret = bmi_read(I2C_NUM_0, &REG_PWR_CONF, &tmp, 1);
+    esp_err_t ret = bmi_read(I2C_MASTER_NUM, &REG_PWR_CONF, &tmp, 1);
     printf("Value of PWR_CONF: %2X \n", tmp);
     if (ret != ESP_OK) {
         printf("Error, PWR_CONF: %s \n", esp_err_to_name(ret));
     }
 
-    ret = bmi_read(I2C_NUM_0, &REG_PWR_CTRL, &tmp2, 1);
+    ret = bmi_read(I2C_MASTER_NUM, &REG_PWR_CTRL, &tmp2, 1);
     printf("Value of PWR_CTRL register: %2X \n", tmp2);
     if (ret != ESP_OK) {
         printf("Error, PWR_CTRL: %s \n", esp_err_to_name(ret));
@@ -945,10 +945,10 @@ esp_err_t reading_loop(void) {
     uint16_t acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z;
     esp_err_t ret;
     while (1) {
-        bmi_read(I2C_NUM_0, &REG_INT_STATUS, &reg_int_status_val, 1);
+        bmi_read(I2C_MASTER_NUM, &REG_INT_STATUS, &reg_int_status_val, 1);
         if (is_data_ready(reg_int_status_val)) {  // if the reg is 0x80 There is
                                                   // data available
-            ret = bmi_read(I2C_NUM_0, &REG_DATA_8, (uint8_t *)data_data8,
+            ret = bmi_read(I2C_MASTER_NUM, &REG_DATA_8, (uint8_t *)data_data8,
                            sizeof(data_data8));
 
             acc_x = combine_bytes(data_data8[1], data_data8[0]);
