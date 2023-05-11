@@ -1,0 +1,30 @@
+menu "BMI270 CONFIG"
+
+config SENSOR_POWER_MODE
+    int
+    default 1
+    help
+      Select the power management mode of the device.
+
+choice
+    prompt "Select power management mode"
+
+    config PM_LOW_POWER
+        bool "Low power mode (0)"
+        help
+          This mode reduces power consumption at the cost of performance.
+
+    config PM_NORMAL
+        bool "Normal power mode (1)"
+        help
+          This is the default power mode.
+
+
+    config PM_PERFORMANCE
+        bool "Performance mode (2)"
+        help
+          This mode prioritizes performance over power consumption.
+
+endchoice
+
+endmenu

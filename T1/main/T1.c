@@ -5,6 +5,10 @@
 #include "math.h"
 #include "sdkconfig.h"
 
+//=============================================================================
+//                              Defines and global variables
+//=============================================================================
+
 // I2C pin configurations
 #define I2C_MASTER_SCL_IO GPIO_NUM_22
 #define I2C_MASTER_SDA_IO GPIO_NUM_21
@@ -29,12 +33,6 @@
 #define ACCEL_RAW_TO_G (8.000 / 32768.0)
 #define GYRO_RAW_TO_RAD_S (34.90659 / 32768.0)
 
-// Power management modes
-#define PM_NORMAL 101
-#define PM_LOW_POWER 102
-#define PM_PERFORMANCE 103
-
-// Other defines
 #define DATA_READY_MASK 0x80
 
 // Register addresses for sensor configuration and control
@@ -50,11 +48,12 @@ uint8_t REG_INTERNAL_STATUS = 0x21;
 uint8_t REG_INT_STATUS = 0x03;
 uint8_t REG_DATA_8 = 0x0C;
 
-// Global variables
-// esp_err_t ret = ESP_OK;
-// esp_err_t ret2 = ESP_OK;
+// Config variables for sensor configuration and control
+#define SENSOR_POWER_MODE CONFIG_SENSOR_POWER_MODE
 
-int CURRENT_PM = PM_NORMAL;
+//=============================================================================
+//                              BMI270 functions
+//=============================================================================
 
 /*! @name  Global array that stores the configuration file of BMI270 */
 const uint8_t bmi270_config_file[] = {
@@ -793,6 +792,10 @@ esp_err_t bmi_init(void) {
     return i2c_driver_install(i2c_master_port, conf.mode, 0, 0, 0);
 }
 
+//=============================================================================
+//                              MAIN
+//=============================================================================
+
 void chipid(void) {
     uint8_t tmp;
 
@@ -881,20 +884,20 @@ void set_power_mode(int mode) {
     printf("Setting power mode: ");
     uint8_t val_pwr_ctrl, val_acc_conf, val_gyr_conf, val_pwr_conf;
     switch (mode) {
-        case PM_LOW_POWER:
+        case 0:
             printf("PM_LOW_POWER\n");
             val_pwr_ctrl = 0x04;
             val_acc_conf = 0x17;
             val_pwr_conf = 0x03;
             break;
-        case PM_NORMAL:
+        case 1:
             printf("PM_NORMAL\n");
             val_pwr_ctrl = 0x0E;
             val_acc_conf = 0xA9;
             val_gyr_conf = 0xA9;
             val_pwr_conf = 0x02;
             break;
-        case PM_PERFORMANCE:
+        case 2:
             printf("PM_PERFORMANCE\n");
             val_pwr_ctrl = 0x0E;
             val_acc_conf = 0xA8;
@@ -943,7 +946,8 @@ esp_err_t reading_loop(void) {
     esp_err_t ret;
     while (1) {
         bmi_read(I2C_NUM_0, &REG_INT_STATUS, &reg_int_status_val, 1);
-        if (is_data_ready(reg_int_status_val)) {
+        if (is_data_ready(reg_int_status_val)) {  // if the reg is 0x80 There is
+                                                  // data available
             ret = bmi_read(I2C_NUM_0, &REG_DATA_8, (uint8_t *)data_data8,
                            sizeof(data_data8));
 
@@ -955,27 +959,19 @@ esp_err_t reading_loop(void) {
             gyr_y = combine_bytes(data_data8[9], data_data8[8]);
             gyr_z = combine_bytes(data_data8[11], data_data8[10]);
 
-            printf("acc_x: %f m/s2     acc_y: %f m/s2     acc_z: %f m/s2\n",
+            printf("AcC: (%.2f, %.2f, %.2f) m/s² (%.2f, %.2f, %.2f) g | ",
                    (int16_t)acc_x * ACCEL_RAW_TO_MS2,
                    (int16_t)acc_y * ACCEL_RAW_TO_MS2,
-                   (int16_t)acc_z * ACCEL_RAW_TO_MS2);
-            printf(
-                "acc_x: %f g     acc_y: %f g     acc_z: %f g     gyr_x: %f "
-                "rad/s     gyr_y: %f rad/s      gyr_z: %f rad/s\n",
-                (int16_t)acc_x * ACCEL_RAW_TO_G,
-                (int16_t)acc_y * ACCEL_RAW_TO_G,
-                (int16_t)acc_z * ACCEL_RAW_TO_G,
-                (int16_t)gyr_x * GYRO_RAW_TO_RAD_S,
-                (int16_t)gyr_y * GYRO_RAW_TO_RAD_S,
-                (int16_t)gyr_z * GYRO_RAW_TO_RAD_S);
-            printf("acc_x: %f g     acc_y: %f g     acc_z: %f g  \n",
+                   (int16_t)acc_z * ACCEL_RAW_TO_MS2,
                    (int16_t)acc_x * ACCEL_RAW_TO_G,
                    (int16_t)acc_y * ACCEL_RAW_TO_G,
                    (int16_t)acc_z * ACCEL_RAW_TO_G);
-            printf("gyr_x: %f rad/s     gyr_y: %f rad/s      gyr_z: %f rad/s\n",
+
+            printf("Gy: (%.2f, %.2f, %.2f) rad/s\n",
                    (int16_t)gyr_x * GYRO_RAW_TO_RAD_S,
                    (int16_t)gyr_y * GYRO_RAW_TO_RAD_S,
                    (int16_t)gyr_z * GYRO_RAW_TO_RAD_S);
+
             if (ret != ESP_OK) {
                 printf("Error while reading: %s \n", esp_err_to_name(ret));
             }
@@ -989,7 +985,7 @@ void app_main(void) {
     chipid();
     initialization();
     check_initialization();
-    set_power_mode(CURRENT_PM);
+    set_power_mode(SENSOR_POWER_MODE);
     check_power_mode();
     internal_status();
     printf("Started reading\n");
