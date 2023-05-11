@@ -5,28 +5,56 @@
 #include "math.h"
 #include "sdkconfig.h"
 
-#define I2C_MASTER_SCL_IO GPIO_NUM_22  // GPIO pin
-#define I2C_MASTER_SDA_IO GPIO_NUM_21  // GPIO pin
+// I2C pin configurations
+#define I2C_MASTER_SCL_IO GPIO_NUM_22
+#define I2C_MASTER_SDA_IO GPIO_NUM_21
 
+// I2C frequency (Hz)
 #define I2C_MASTER_FREQ_HZ 10000
+
+// I2C slave address
 #define ESP_SLAVE_ADDR 0x68
+
+// I2C write and read bit configurations
 #define WRITE_BIT 0x0
 #define READ_BIT 0x1
+
+// I2C acknowledge (ACK) check and value configurations
 #define ACK_CHECK_EN 0x0
 #define ACK_VAL 0x0
 #define NACK_VAL 0x1
+
+// Conversion factors for raw sensor data
 #define ACCEL_RAW_TO_MS2 (78.4532 / 32768.0)
 #define ACCEL_RAW_TO_G (8.000 / 32768.0)
 #define GYRO_RAW_TO_RAD_S (34.90659 / 32768.0)
-// SUSPEND,LOW_POWER,NORMAL,PERFORMANCE
+
+// Power management modes
 #define PM_NORMAL 101
 #define PM_LOW_POWER 102
-#define PM_SUSPEND 103
-#define PM_PERFORMANCE 104
-esp_err_t ret = ESP_OK;
-esp_err_t ret2 = ESP_OK;
+#define PM_PERFORMANCE 103
 
-char *CURRENT_POWER_MODE = "NORMAL";
+// Other defines
+#define DATA_READY_MASK 0x80
+
+// Register addresses for sensor configuration and control
+uint8_t REG_ID = 0x00;
+uint8_t REG_PWR_CTRL = 0x7D;
+uint8_t REG_ACC_CONF = 0x40;
+uint8_t REG_GYR_CONF = 0x42;
+uint8_t REG_PWR_CONF = 0x7C;
+uint8_t REG_PWR_CONF_ADVPOWERSAVE = 0x7C;
+uint8_t REG_INIT_CTRL = 0x59;
+uint8_t REG_INIT_DATA = 0x5E;
+uint8_t REG_INTERNAL_STATUS = 0x21;
+uint8_t REG_INT_STATUS = 0x03;
+uint8_t REG_DATA_8 = 0x0C;
+
+// Global variables
+// esp_err_t ret = ESP_OK;
+// esp_err_t ret2 = ESP_OK;
+
+int CURRENT_PM = PM_NORMAL;
 
 /*! @name  Global array that stores the configuration file of BMI270 */
 const uint8_t bmi270_config_file[] = {
@@ -730,7 +758,8 @@ esp_err_t bmi_read(i2c_port_t i2c_num, uint8_t *data_addres, uint8_t *data_rd,
     }
     i2c_master_read_byte(cmd, data_rd + size - 1, NACK_VAL);
     i2c_master_stop(cmd);
-    ret = i2c_master_cmd_begin(i2c_num, cmd, 1000 / portTICK_PERIOD_MS);
+    esp_err_t ret =
+        i2c_master_cmd_begin(i2c_num, cmd, 1000 / portTICK_PERIOD_MS);
     i2c_cmd_link_delete(cmd);
     return ret;
 }
@@ -765,16 +794,15 @@ esp_err_t bmi_init(void) {
 }
 
 void chipid(void) {
-    uint8_t reg_id = 0x00;
     uint8_t tmp;
 
-    bmi_read(I2C_NUM_0, &reg_id, &tmp, 1);
-    printf("valor de CHIPID: %2X \n\n", tmp);
+    bmi_read(I2C_NUM_0, &REG_ID, &tmp, 1);
+    printf("Value of CHIP_ID: %2X \n\n", tmp);
     if (tmp == 0x24) {
-        printf("Chip reconocido.\n\n");
+        printf("Chip Recognized\n\n");
     }
     if (tmp != 0x24) {
-        printf("Chip no reconocido. \nCHIP ID: %2x\n\n", tmp);  // %2X
+        printf("Chip not recognized. \nCHIP ID: %2x\n\n", tmp);  // %2X
         exit(EXIT_SUCCESS);
     }
 }
@@ -782,69 +810,64 @@ void chipid(void) {
 void softreset(void) {
     uint8_t reg_softreset = 0x7E, val_softreset = 0xB6;
 
-    ret = bmi_write(I2C_NUM_0, &reg_softreset, &val_softreset, 1);
+    esp_err_t ret = bmi_write(I2C_NUM_0, &reg_softreset, &val_softreset, 1);
     vTaskDelay(1000 / portTICK_PERIOD_MS);
     if (ret != ESP_OK) {
-        printf("\nError en softreset: %s \n", esp_err_to_name(ret));
+        printf("\nError in softreset: %s \n", esp_err_to_name(ret));
     } else {
-        printf("\nSoftreset: OK\n\n");
+        printf("\nSoftreset: OK!\n\n");
     }
 }
 
-void display_power_mode(void) {
-    uint8_t reg_pwr_conf = 0x7C, reg_pwr_ctrl = 0x7D;
-    uint8_t tmp, tmp2;
+esp_err_t initialization(void) {
+    uint8_t val_pwr_conf_advpowersave = 0x00;
+    uint8_t val_init_ctrl = 0x00;
+    uint8_t val_init_ctrl2 = 0x01;
 
-    ret = bmi_read(I2C_NUM_0, &reg_pwr_conf, &tmp, 1);
-    printf("valor de PWR_CONF: %2X \n", tmp);
-    if (ret != ESP_OK) {
-        printf("Error en PWR_CONF: %s \n", esp_err_to_name(ret));
-    }
+    printf("Initializing ...\n");
 
-    ret2 = bmi_read(I2C_NUM_0, &reg_pwr_ctrl, &tmp2, 1);
-    printf("valor de PWR_CTRL: %2X \n", tmp2);
-    if (ret2 != ESP_OK) {
-        printf("Error en PWR_CTRL: %s \n", esp_err_to_name(ret2));
-    }
-}
-
-void initialization(void) {
-    uint8_t reg_pwr_conf_advpowersave = 0x7C, val_pwr_conf_advpowersave = 0x00;
-    uint8_t reg_init_ctrl = 0x59, val_init_ctrl = 0x00, val_init_ctrl2 = 0x01;
-    uint8_t reg_init_data = 0x5E;  //, tmp;
-
-    printf("Inicializando ...\n");
-
-    bmi_write(I2C_NUM_0, &reg_pwr_conf_advpowersave, &val_pwr_conf_advpowersave,
+    bmi_write(I2C_NUM_0, &REG_PWR_CONF_ADVPOWERSAVE, &val_pwr_conf_advpowersave,
               1);
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
-    ret = bmi_write(I2C_NUM_0, &reg_init_ctrl, &val_init_ctrl, 1);
+    esp_err_t ret = bmi_write(I2C_NUM_0, &REG_INIT_CTRL, &val_init_ctrl, 1);
 
     int config_size = sizeof(bmi270_config_file);
-    ret = bmi_write(I2C_NUM_0, &reg_init_data, (uint8_t *)bmi270_config_file,
+    ret = bmi_write(I2C_NUM_0, &REG_INIT_DATA, (uint8_t *)bmi270_config_file,
                     config_size);
     if (ret != ESP_OK) {
-        printf("\nError cargando config_file\n");
+        printf("\nErorr loding config_file\n");
     } else {
-        printf("\nConfig_file cargado.\n");
+        printf("\nSuccesfully loaded config_file\n");
     }
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
-    ret = bmi_write(I2C_NUM_0, &reg_init_ctrl, &val_init_ctrl2, 1);
+    ret = bmi_write(I2C_NUM_0, &REG_INIT_CTRL, &val_init_ctrl2, 1);
 
-    printf("\nAlgoritmo de inicializacion finalizado.\n\n");
+    if (ret != ESP_OK) {
+        printf("\nError in initialization: %s \n", esp_err_to_name(ret));
+    } else {
+        printf("\nInitialization: OK!\n\n");
+    }
+
+    return ret;
+}
+
+void internal_status(void) {
+    uint8_t tmp;
+
+    bmi_read(I2C_NUM_0, &REG_INTERNAL_STATUS, &tmp, 1);
+    printf("Internal Status: %2X\n\n", tmp);
 }
 
 void check_initialization(void) {
-    uint8_t reg_internalstatus = 0x21;
     uint8_t tmp;
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
-    bmi_read(I2C_NUM_0, &reg_internalstatus, &tmp, 1);
+    bmi_read(I2C_NUM_0, &REG_INTERNAL_STATUS, &tmp, 1);
     printf("Init_status.0: %x \n", (tmp & 0b00001111));
     if ((tmp & 0b00001111) == 1) {
         printf("Comprobacion Inicializacion: OK\n\n");
@@ -855,60 +878,74 @@ void check_initialization(void) {
 }
 
 void set_power_mode(int mode) {
-    uint8_t reg_pwr_ctrl = 0x7D;
-    uint8_t reg_acc_conf = 0x40;
-    uint8_t reg_gyr_conf = 0x42;
-    uint8_t reg_pwr_conf = 0x7C;
+    printf("Setting power mode: ");
     uint8_t val_pwr_ctrl, val_acc_conf, val_gyr_conf, val_pwr_conf;
     switch (mode) {
+        case PM_LOW_POWER:
+            printf("PM_LOW_POWER\n");
+            val_pwr_ctrl = 0x04;
+            val_acc_conf = 0x17;
+            val_pwr_conf = 0x03;
+            break;
         case PM_NORMAL:
+            printf("PM_NORMAL\n");
             val_pwr_ctrl = 0x0E;
             val_acc_conf = 0xA9;
             val_gyr_conf = 0xA9;
             val_pwr_conf = 0x02;
             break;
-        case PM_SUSPEND:
-            /* code */
-            break;
         case PM_PERFORMANCE:
-            /* code */
-            break;
-        case PM_LOW_POWER:
-            /* code */
+            printf("PM_PERFORMANCE\n");
+            val_pwr_ctrl = 0x0E;
+            val_acc_conf = 0xA8;
+            val_gyr_conf = 0xE9;
+            val_pwr_conf = 0x02;
             break;
         default:
+            printf("ERROR\n");
             // error
             break;
     }
-    bmi_write(I2C_NUM_0, &reg_pwr_ctrl, &val_pwr_ctrl, 1);
-    bmi_write(I2C_NUM_0, &reg_acc_conf, &val_acc_conf, 1);
-    bmi_write(I2C_NUM_0, &reg_gyr_conf, &val_gyr_conf, 1);
-    bmi_write(I2C_NUM_0, &reg_pwr_conf, &val_pwr_conf, 1);
+    bmi_write(I2C_NUM_0, &REG_PWR_CTRL, &val_pwr_ctrl, 1);
+    bmi_write(I2C_NUM_0, &REG_ACC_CONF, &val_acc_conf, 1);
+    bmi_write(I2C_NUM_0, &REG_GYR_CONF, &val_gyr_conf, 1);
+    bmi_write(I2C_NUM_0, &REG_PWR_CONF, &val_pwr_conf, 1);
 }
 
-void internal_status(void) {
-    uint8_t reg_internalstatus = 0x21;
-    uint8_t tmp;
+esp_err_t check_power_mode(void) {
+    uint8_t tmp, tmp2;
+    esp_err_t ret = bmi_read(I2C_NUM_0, &REG_PWR_CONF, &tmp, 1);
+    printf("Value of PWR_CONF: %2X \n", tmp);
+    if (ret != ESP_OK) {
+        printf("Error, PWR_CONF: %s \n", esp_err_to_name(ret));
+    }
 
-    bmi_read(I2C_NUM_0, &reg_internalstatus, &tmp, 1);
-    printf("Internal Status: %2X\n\n", tmp);
+    ret = bmi_read(I2C_NUM_0, &REG_PWR_CTRL, &tmp2, 1);
+    printf("Value of PWR_CTRL register: %2X \n", tmp2);
+    if (ret != ESP_OK) {
+        printf("Error, PWR_CTRL: %s \n", esp_err_to_name(ret));
+    }
+    return ret;
 }
 
 uint16_t combine_bytes(uint8_t msb, uint8_t lsb) {
     return ((uint16_t)msb << 8) | lsb;
 }
 
-void lectura(void) {
-    uint8_t reg_intstatus = 0x03, tmp;
-    int bytes_data8 = 12;
-    uint8_t reg_data = 0x0C, data_data8[bytes_data8];
-    uint16_t acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z;
+int is_data_ready(uint8_t status) {
+    return (status & DATA_READY_MASK) == DATA_READY_MASK;
+}
 
+esp_err_t reading_loop(void) {
+    uint8_t reg_int_status_val;
+    uint8_t data_data8[12];
+    uint16_t acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z;
+    esp_err_t ret;
     while (1) {
-        bmi_read(I2C_NUM_0, &reg_intstatus, &tmp, 1);
-        if ((tmp & 0b10000000) == 0x80) {
-            ret = bmi_read(I2C_NUM_0, &reg_data, (uint8_t *)data_data8,
-                           bytes_data8);
+        bmi_read(I2C_NUM_0, &REG_INT_STATUS, &reg_int_status_val, 1);
+        if (is_data_ready(reg_int_status_val)) {
+            ret = bmi_read(I2C_NUM_0, &REG_DATA_8, (uint8_t *)data_data8,
+                           sizeof(data_data8));
 
             acc_x = combine_bytes(data_data8[1], data_data8[0]);
             acc_y = combine_bytes(data_data8[3], data_data8[2]);
@@ -940,7 +977,7 @@ void lectura(void) {
                    (int16_t)gyr_y * GYRO_RAW_TO_RAD_S,
                    (int16_t)gyr_z * GYRO_RAW_TO_RAD_S);
             if (ret != ESP_OK) {
-                printf("Error lectura: %s \n", esp_err_to_name(ret));
+                printf("Error while reading: %s \n", esp_err_to_name(ret));
             }
         }
     }
@@ -952,9 +989,9 @@ void app_main(void) {
     chipid();
     initialization();
     check_initialization();
-    set_power_mode(PM_NORMAL);
-    display_power_mode();
+    set_power_mode(CURRENT_PM);
+    check_power_mode();
     internal_status();
-    printf("Comienza lectura\n\n");
-    lectura();
+    printf("Started reading\n");
+    reading_loop();
 }
