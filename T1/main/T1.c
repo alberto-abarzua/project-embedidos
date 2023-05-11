@@ -815,7 +815,6 @@ esp_err_t chip_id(void) {
     return ESP_OK;
 }
 
-
 esp_err_t softreset(void) {
     uint8_t reg_softreset = 0x7E, val_softreset = 0xB6;
 
@@ -831,8 +830,8 @@ esp_err_t initialization(void) {
 
     printf("Initializing ...\n");
 
-    bmi_write(I2C_BMI_NUM, &REG_PWR_CONF_ADVPOWERSAVE, &val_pwr_conf_advpowersave,
-              1);
+    bmi_write(I2C_BMI_NUM, &REG_PWR_CONF_ADVPOWERSAVE,
+              &val_pwr_conf_advpowersave, 1);
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
@@ -885,6 +884,7 @@ void check_initialization(void) {
 void set_power_mode(int mode) {
     printf("Setting power mode: ");
     uint8_t val_pwr_ctrl, val_acc_conf, val_gyr_conf, val_pwr_conf;
+    val_pwr_ctrl = val_acc_conf = val_gyr_conf = val_pwr_conf = 0x00;
     switch (mode) {
         case 0:
             printf("PM_LOW_POWER\n");
@@ -911,10 +911,10 @@ void set_power_mode(int mode) {
             // error
             break;
     }
-    bmi_write(I2C_BMI_NUM, &REG_PWR_CTRL, &val_pwr_ctrl, 1);
-    bmi_write(I2C_BMI_NUM, &REG_ACC_CONF, &val_acc_conf, 1);
-    bmi_write(I2C_BMI_NUM, &REG_GYR_CONF, &val_gyr_conf, 1);
-    bmi_write(I2C_BMI_NUM, &REG_PWR_CONF, &val_pwr_conf, 1);
+    if (val_pwr_ctrl) bmi_write(I2C_BMI_NUM, &REG_PWR_CTRL, &val_pwr_ctrl, 1);
+    if (val_acc_conf) bmi_write(I2C_BMI_NUM, &REG_ACC_CONF, &val_acc_conf, 1);
+    if (val_gyr_conf) bmi_write(I2C_BMI_NUM, &REG_GYR_CONF, &val_gyr_conf, 1);
+    if (val_pwr_conf) bmi_write(I2C_BMI_NUM, &REG_PWR_CONF, &val_pwr_conf, 1);
 }
 
 esp_err_t check_power_mode(void) {
