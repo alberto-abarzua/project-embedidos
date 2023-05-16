@@ -1,30 +1,375 @@
 menu "BMI270 CONFIG"
 
+
+# POWER MODE
+
 config SENSOR_POWER_MODE
     int
-    default 1
     help
       Select the power management mode of the device.
 
-choice
-    prompt "Select power management mode"
+    choice
+        prompt "Select power management mode"
 
-    config PM_LOW_POWER
-        bool "Low power mode (0)"
-        help
-          This mode reduces power consumption at the cost of performance.
+        config PM_LOW_POWER
+            bool "Low power mode (0)"
+            help
+            This mode reduces power consumption at the cost of performance.
 
-    config PM_NORMAL
-        bool "Normal power mode (1)"
-        help
-          This is the default power mode.
+        config PM_NORMAL
+            bool "Normal power mode (1)"
+            help
+            This is the default power mode.
 
 
-    config PM_PERFORMANCE
-        bool "Performance mode (2)"
-        help
-          This mode prioritizes performance over power consumption.
+        config PM_PERFORMANCE
+            bool "Performance mode (2)"
+            help
+            This mode prioritizes performance over power consumption.
 
-endchoice
+        config NO_POWER_SETTING
+            bool "No power Setting"
+
+            help
+            Does not set power mode.
+
+    endchoice
+
+if PM_LOW_POWER
+    config SENSOR_POWER_MODE
+        int
+        default 0
+endif
+
+if PM_NORMAL
+    config SENSOR_POWER_MODE
+        int
+        default 1
+endif
+
+if PM_PERFORMANCE
+    config SENSOR_POWER_MODE
+        int
+        default 2
+endif
+
+if NO_POWER_SETTING
+    config SENSOR_POWER_MODE
+        int
+        default 3
+endif
+
+# SENSOR ACC RANGE
+
+config SENSOR_ACC_RANGE
+    int
+    help
+      Select ACC_RANGE 
+
+    choice
+        prompt "Select ACC_RANGE "
+
+        config RANGE_2G
+            bool "range_2g (0x00)"
+        
+        config RANGE_4G
+            bool "range_4g (0x01)"
+        
+        config RANGE_8G
+            bool "range_8g (0x02)"
+
+        config RANGE_16G
+            bool "range_16g (0x03)"
+       
+
+    endchoice
+
+if RANGE_2G
+    config SENSOR_ACC_RANGE
+        int
+        default 0
+endif
+
+if RANGE_4G
+    config SENSOR_ACC_RANGE
+        int
+        default 1
+endif
+
+if RANGE_8G
+    config SENSOR_ACC_RANGE
+        int
+        default 2
+endif
+
+if RANGE_16G
+    config SENSOR_ACC_RANGE
+        int
+        default 3
+endif
+
+
+# SENSOR ACC ODR
+
+config SENSOR_ACC_ODR
+    int 
+
+    choice
+        prompt "Select ACC_ODR"
+
+
+        config ODR_0P78
+            bool "odr_0p78 (0x01)"
+
+        config ODR_1P5
+            bool "odr_1p5 (0x02)"
+
+        config ODR_3P1
+            bool "odr_3p1 (0x03)"
+
+        config ODR_6P25
+            bool "odr_6p25 (0x04)"
+
+        config ODR_12P5
+            bool "odr_12p5 (0x05)"
+
+        config ODR_25
+            bool "odr_25 (0x06)"
+
+        config ODR_50
+            bool "odr_50 (0x07)"
+
+        config ODR_100
+            bool "odr_100 (0x08)"
+
+        config ODR_200
+            bool "odr_200 (0x09)"
+
+        config ODR_400
+            bool "odr_400 (0x0A)"
+
+        config ODR_800
+            bool "odr_800 (0x0B)"
+
+        config ODR_1K6
+            bool "odr_1k6 (0x0C)"
+
+    endchoice
+
+if ODR_0P78
+    config SENSOR_ACC_ODR
+        int
+        default 1
+endif
+
+if ODR_1P5
+    config SENSOR_ACC_ODR
+        int
+        default 2
+endif
+
+if ODR_3P1
+    config SENSOR_ACC_ODR
+        int
+        default 3
+endif
+
+if ODR_6P25
+    config SENSOR_ACC_ODR
+        int
+        default 4
+endif
+
+if ODR_12P5
+    config SENSOR_ACC_ODR
+        int
+        default 5
+endif
+
+if ODR_25
+    config SENSOR_ACC_ODR
+        int
+        default 6
+endif
+
+if ODR_50
+    config SENSOR_ACC_ODR
+        int
+        default 7
+endif
+
+if ODR_100
+    config SENSOR_ACC_ODR
+        int
+        default 8
+endif
+
+if ODR_200
+    config SENSOR_ACC_ODR
+        int
+        default 9
+endif
+
+if ODR_400
+    config SENSOR_ACC_ODR
+        int
+        default 10
+endif
+
+if ODR_800
+    config SENSOR_ACC_ODR
+        int
+        default 11
+endif
+
+if ODR_1K6
+    config SENSOR_ACC_ODR
+        int
+        default 12
+endif
+
+#  SENSOR_GYR_ODR
+
+
+config SENSOR_GYR_ODR
+    int 
+    help
+      Select GYR_ODR
+
+    choice
+        prompt "Select GYR_ODR"
+
+        config GYR_ODR_25
+            bool "odr_25 (0x06)"
+
+        config GYR_ODR_50
+            bool "odr_50 (0x07)"
+
+        config GYR_ODR_100
+            bool "odr_100 (0x08)"
+
+        config GYR_ODR_200
+            bool "odr_200 (0x09)"
+
+        config GYR_ODR_400
+            bool "odr_400 (0x0A)"
+
+        config GYR_ODR_800
+            bool "odr_800 (0x0B)"
+
+        config GYR_ODR_1K6
+            bool "odr_1k6 (0x0C)"
+
+        config GYR_ODR_3K2
+            bool "odr_3k2 (0x0D)"
+
+    endchoice
+
+
+if GYR_ODR_25
+    config SENSOR_GYR_ODR
+        int
+        default 6
+endif
+
+if GYR_ODR_50
+    config SENSOR_GYR_ODR
+        int
+        default 7
+endif
+
+if GYR_ODR_100
+    config SENSOR_GYR_ODR
+        int
+        default 8
+endif
+
+if GYR_ODR_200
+    config SENSOR_GYR_ODR
+        int
+        default 9
+endif
+
+if GYR_ODR_400
+    config SENSOR_GYR_ODR
+        int
+        default 10
+endif
+
+if GYR_ODR_800
+    config SENSOR_GYR_ODR
+        int
+        default 11
+endif
+
+if GYR_ODR_1K6
+    config SENSOR_GYR_ODR
+        int
+        default 12
+endif
+
+if GYR_ODR_3K2
+    config SENSOR_GYR_ODR
+        int
+        default 13
+endif
+
+# SENSOR_GYR_RANGE
+
+config SENSOR_GYR_RANGE
+    int
+    help
+      Select GYR_Range
+
+    choice
+        prompt "Select GYR_Range"
+
+        config RANGE_2000
+            bool "range_2000 +/-2000dps, 16.4 LSB/dps (0x00)"
+
+        config RANGE_1000
+            bool "range_1000 +/-1000dps, 32.8 LSB/dps (0x01)"
+
+        config RANGE_500
+            bool "range_500 +/-500dps, 65.6 LSB/dps (0x02)"
+
+        config RANGE_250
+            bool "range_250 +/-250dps, 131.2 LSB/dps (0x03)"
+
+        config RANGE_125
+            bool "range_125 +/-125dps, 262.4 LSB/dps (0x04)"
+
+    endchoice
+
+if RANGE_2000
+    config SENSOR_GYR_RANGE
+        int
+        default 0
+endif
+
+if RANGE_1000
+    config SENSOR_GYR_RANGE
+        int
+        default 1
+endif
+
+if RANGE_500
+    config SENSOR_GYR_RANGE
+        int
+        default 2
+endif
+
+if RANGE_250
+    config SENSOR_GYR_RANGE
+        int
+        default 3
+endif
+
+if RANGE_125
+    config SENSOR_GYR_RANGE
+        int
+        default 4
+endif
+
 
 endmenu
