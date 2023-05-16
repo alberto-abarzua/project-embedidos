@@ -39,7 +39,9 @@
 uint8_t REG_ID = 0x00;
 uint8_t REG_PWR_CTRL = 0x7D;
 uint8_t REG_ACC_CONF = 0x40;
+uint8_t REG_ACC_RANGE = 0x41;
 uint8_t REG_GYR_CONF = 0x42;
+uint8_t REG_GYR_RANGE = 0x43;
 uint8_t REG_PWR_CONF = 0x7C;
 uint8_t REG_PWR_CONF_ADVPOWERSAVE = 0x7C;
 uint8_t REG_INIT_CTRL = 0x59;
@@ -50,7 +52,10 @@ uint8_t REG_DATA_8 = 0x0C;
 
 // Config variables for sensor configuration and control
 #define SENSOR_POWER_MODE CONFIG_SENSOR_POWER_MODE
-
+#define SENSOR_ACC_RANGE CONFIG_SENSOR_ACC_RANGE
+#define SENSOR_GYR_RANGE CONFIG_SENSOR_GYR_RANGE
+#define SENSOR_ACC_ODR CONFIG_SENSOR_ACC_ODR
+#define SENSOR_GYR_ODR CONFIG_SENSOR_GYR_ODR
 //=============================================================================
 //                              BMI270 functions
 //=============================================================================
@@ -793,7 +798,7 @@ esp_err_t bmi_init(void) {
 }
 
 //=============================================================================
-//                              MAIN
+//                              Predefined functions
 //=============================================================================
 
 esp_err_t chip_id(void) {
@@ -881,10 +886,51 @@ void check_initialization(void) {
     }
 }
 
-void set_power_mode(int mode) {
+esp_err_t set_and_check(i2c_port_t i2c_num, uint8_t *reg, uint8_t *value,
+                        size_t size, char *help_str) {
+    esp_err_t ret = ESP_OK;
+    ret = bmi_write(I2C_BMI_NUM, reg, value, size);
+    if (ret != ESP_OK) {
+        printf("Failed to write %s: %d\n\n", help_str, ret);
+        return ret;
+    }
+    uint8_t tmp;
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    ret = bmi_read(I2C_BMI_NUM, reg, &tmp, size);
+    if (ret != ESP_OK) {
+        printf("Failed to read %s: %d\n\n", help_str, ret);
+    } else if (tmp != *value) {
+        printf("Failed to set %s: %d expected: %d, was %d\n\n", help_str, ret,
+               *value, tmp);
+        ret = ESP_FAIL;
+    }
+    if (ret == ESP_OK) {
+        printf("Set %s: %d\n\n", help_str, *value);
+    }
+    return ret;
+}
+
+esp_err_t set_and_check_mask(i2c_port_t i2c_num, uint8_t *reg, uint8_t *value, uint8_t mask, char *help_str) {
+    uint8_t current_value;
+    esp_err_t ret;
+    ret = bmi_read(I2C_BMI_NUM, reg, &current_value, 1);
+    if (ret != ESP_OK) {
+        printf("Failed to read %s: %d\n\n", help_str, ret);
+        return ret;
+    }
+    *value = (*value & mask) | (current_value & ~mask);
+    return set_and_check(i2c_num, reg, value, 1, help_str);
+}
+
+//=============================================================================
+//                             POWER MODES
+//=============================================================================
+
+esp_err_t set_power_mode(uint8_t mode) {
     printf("Setting power mode: ");
     uint8_t val_pwr_ctrl, val_acc_conf, val_gyr_conf, val_pwr_conf;
     val_pwr_ctrl = val_acc_conf = val_gyr_conf = val_pwr_conf = 0x00;
+    esp_err_t ret = ESP_OK;
     switch (mode) {
         case 0:
             printf("PM_LOW_POWER\n");
@@ -906,32 +952,62 @@ void set_power_mode(int mode) {
             val_gyr_conf = 0xE9;
             val_pwr_conf = 0x02;
             break;
+        case 3:
+            printf("No change\n");
+            return ret;
         default:
             printf("ERROR\n");
-            // error
+            ret = ESP_FAIL;
             break;
     }
-    if (val_pwr_ctrl) bmi_write(I2C_BMI_NUM, &REG_PWR_CTRL, &val_pwr_ctrl, 1);
-    if (val_acc_conf) bmi_write(I2C_BMI_NUM, &REG_ACC_CONF, &val_acc_conf, 1);
-    if (val_gyr_conf) bmi_write(I2C_BMI_NUM, &REG_GYR_CONF, &val_gyr_conf, 1);
-    if (val_pwr_conf) bmi_write(I2C_BMI_NUM, &REG_PWR_CONF, &val_pwr_conf, 1);
-}
-
-esp_err_t check_power_mode(void) {
-    uint8_t tmp, tmp2;
-    esp_err_t ret = bmi_read(I2C_BMI_NUM, &REG_PWR_CONF, &tmp, 1);
-    printf("Value of PWR_CONF: %2X \n", tmp);
-    if (ret != ESP_OK) {
-        printf("Error, PWR_CONF: %s \n", esp_err_to_name(ret));
-    }
-
-    ret = bmi_read(I2C_BMI_NUM, &REG_PWR_CTRL, &tmp2, 1);
-    printf("Value of PWR_CTRL register: %2X \n", tmp2);
-    if (ret != ESP_OK) {
-        printf("Error, PWR_CTRL: %s \n", esp_err_to_name(ret));
-    }
+    if (val_pwr_ctrl)
+        set_and_check(I2C_BMI_NUM, &REG_PWR_CTRL, &val_pwr_ctrl, 1,
+                      "POWER_MODE");
+    if (val_acc_conf)
+        set_and_check(I2C_BMI_NUM, &REG_ACC_CONF, &val_acc_conf, 1,
+                      "POWER_MODE");
+    if (val_gyr_conf)
+        set_and_check(I2C_BMI_NUM, &REG_GYR_CONF, &val_gyr_conf, 1,
+                      "POWER_MODE");
+    if (val_pwr_conf)
+        set_and_check(I2C_BMI_NUM, &REG_PWR_CONF, &val_pwr_conf, 1,
+                      "POWER_MODE");
     return ret;
 }
+
+//=============================================================================
+//                             ACC CONF AND RANGE
+//=============================================================================
+
+esp_err_t set_acc_odr(uint8_t value) {
+    return set_and_check_mask(I2C_BMI_NUM, &REG_ACC_CONF, &value, 0b00001111,
+                              "ACC_CONF");
+}
+
+esp_err_t set_acc_range(uint8_t value) {
+    return set_and_check_mask(I2C_BMI_NUM, &REG_ACC_RANGE, &value, 0b00000011,
+                              "ACC_RANGE");
+}
+//=============================================================================
+//                             GYR CONF AND RANGE
+//=============================================================================
+esp_err_t set_gyr_odr(uint8_t value) {
+    return set_and_check_mask(I2C_BMI_NUM, &REG_GYR_CONF, &value, 0b00001111,
+                              "GYR_CONF");
+}
+
+esp_err_t set_gyr_range(uint8_t value) {
+    return set_and_check_mask(I2C_BMI_NUM, &REG_GYR_RANGE, &value, 0b00000111,
+                              "GYR_RANGE");
+}
+
+//=============================================================================
+//                             ANYMOTION
+//=============================================================================
+
+//=============================================================================
+//                             MAIN LOOP
+//=============================================================================
 
 uint16_t combine_bytes(uint8_t msb, uint8_t lsb) {
     return ((uint16_t)msb << 8) | lsb;
@@ -986,9 +1062,11 @@ void app_main(void) {
     ESP_ERROR_CHECK(softreset());
     ESP_ERROR_CHECK(chip_id());
     ESP_ERROR_CHECK(initialization());
-    check_initialization();
-    set_power_mode(SENSOR_POWER_MODE);
-    check_power_mode();
+    ESP_ERROR_CHECK(set_power_mode(SENSOR_POWER_MODE));
+    ESP_ERROR_CHECK(set_acc_odr(SENSOR_ACC_ODR));
+    // ESP_ERROR_CHECK(set_acc_range(SENSOR_ACC_RANGE));
+    ESP_ERROR_CHECK(set_gyr_odr(SENSOR_GYR_ODR));
+    // ESP_ERROR_CHECK(set_gyr_range(SENSOR_GYR_RANGE));
     internal_status();
     printf("Started reading\n");
     reading_loop();
