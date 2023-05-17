@@ -11,15 +11,15 @@ menu "BMI270 CONFIG"
             prompt "Select the number of axis for anymotion detection"
     
             config ANYMOTION_MODE_1AXIS
-                bool "1 axis (0)"
+                bool "1 axis (1)"
                 help 
                     Any motion detection is enabled on one axis only, x axis.
             config ANYMOTION_MODE_2AXIS
-                bool "2 axis (1)"
+                bool "2 axis (2)"
                 help 
                     Any motion detection is enabled on two axis, x and y axis.
             config ANYMOTION_MODE_3AXIS
-                bool "3 axis (2)"
+                bool "3 axis (3)"
                 help 
                     Any motion detection is enabled on three axis, x, y and z axis.
                     

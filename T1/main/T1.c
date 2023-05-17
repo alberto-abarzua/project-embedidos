@@ -1027,13 +1027,13 @@ esp_err_t set_anymotion_mode(uint8_t mode){
     uint16_t val_any_1_z = 0x8000; //Anymotion en eje z //Solo bit 15 es 1, ver pag 102
     switch (mode)
     {
-    case 0: //Anymotion en un solo eje, x
+    case 1: //Anymotion en un solo eje, x
         val_anymo_1 = val_any_1_x; 
         break;
-    case 1: //Anymotion en dos ejes, x e y
+    case 2: //Anymotion en dos ejes, x e y
         val_anymo_1 = val_any_1_x | val_any_1_y;
         break;
-    case 2: //Anymotion en tres ejes, x, y, z
+    case 3: //Anymotion en tres ejes, x, y, z
         val_anymo_1 = val_any_1_x | val_any_1_y | val_any_1_z;
         break;
     default:
