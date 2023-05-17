@@ -27,13 +27,15 @@
 #define ACK_CHECK_EN 0x0
 #define ACK_VAL 0x0
 #define NACK_VAL 0x1
+#define DATA_READY_MASK 0x80
 
 // Conversion factors for raw sensor data
-#define ACCEL_RAW_TO_MS2 (78.4532 / 32768.0)
-#define ACCEL_RAW_TO_G (8.000 / 32768.0)
-#define GYRO_RAW_TO_RAD_S (34.90659 / 32768.0)
+#define MAX_INT_VALUE_SENSOR 32768.0
+#define G_MS2 9.80665
 
-#define DATA_READY_MASK 0x80
+#define ACCEL_RAW_TO_G (1.000 / MAX_INT_VALUE_SENSOR)
+#define ACCEL_RAW_TO_MS2 (G_MS2 / MAX_INT_VALUE_SENSOR)
+#define GYR_RAW_TO_RADS (3.14159265359 / 180.0) / MAX_INT_VALUE_SENSOR
 
 // Register addresses for sensor configuration and control
 uint8_t REG_ID = 0x00;
@@ -910,7 +912,8 @@ esp_err_t set_and_check(i2c_port_t i2c_num, uint8_t *reg, uint8_t *value,
     return ret;
 }
 
-esp_err_t set_and_check_mask(i2c_port_t i2c_num, uint8_t *reg, uint8_t *value, uint8_t mask, char *help_str) {
+esp_err_t set_and_check_mask(i2c_port_t i2c_num, uint8_t *reg, uint8_t *value,
+                             uint8_t mask, char *help_str) {
     uint8_t current_value;
     esp_err_t ret;
     ret = bmi_read(I2C_BMI_NUM, reg, &current_value, 1);
@@ -1009,6 +1012,17 @@ esp_err_t set_gyr_range(uint8_t value) {
 //                             MAIN LOOP
 //=============================================================================
 
+float accel_raw_to_ms2(int16_t raw) {
+    return (pow(2, SENSOR_ACC_RANGE + 1) * ACCEL_RAW_TO_MS2) * raw;
+}
+
+float accel_raw_to_g(int16_t raw) {
+    return (pow(2, SENSOR_ACC_RANGE + 1) * ACCEL_RAW_TO_G) * raw;
+}
+float gyr_raw_to_rads(int16_t raw) {
+    int values[] = {2000.0, 1000.0, 500.0, 250.0, 125.0};
+    return values[SENSOR_GYR_RANGE] * GYR_RAW_TO_RADS * raw;
+}
 uint16_t combine_bytes(uint8_t msb, uint8_t lsb) {
     return ((uint16_t)msb << 8) | lsb;
 }
@@ -1036,19 +1050,18 @@ esp_err_t reading_loop(void) {
             gyr_x = combine_bytes(data_data8[7], data_data8[6]);
             gyr_y = combine_bytes(data_data8[9], data_data8[8]);
             gyr_z = combine_bytes(data_data8[11], data_data8[10]);
-
             printf("AcC: (%.2f, %.2f, %.2f) m/s² (%.2f, %.2f, %.2f) g | ",
-                   (int16_t)acc_x * ACCEL_RAW_TO_MS2,
-                   (int16_t)acc_y * ACCEL_RAW_TO_MS2,
-                   (int16_t)acc_z * ACCEL_RAW_TO_MS2,
-                   (int16_t)acc_x * ACCEL_RAW_TO_G,
-                   (int16_t)acc_y * ACCEL_RAW_TO_G,
-                   (int16_t)acc_z * ACCEL_RAW_TO_G);
+                   accel_raw_to_ms2((int16_t)acc_x),
+                   accel_raw_to_ms2((int16_t)acc_y),
+                   accel_raw_to_ms2((int16_t)acc_z),
+                   accel_raw_to_g((int16_t)acc_x),
+                   accel_raw_to_g((int16_t)acc_y),
+                   accel_raw_to_g((int16_t)acc_z));
 
             printf("Gy: (%.2f, %.2f, %.2f) rad/s\n",
-                   (int16_t)gyr_x * GYRO_RAW_TO_RAD_S,
-                   (int16_t)gyr_y * GYRO_RAW_TO_RAD_S,
-                   (int16_t)gyr_z * GYRO_RAW_TO_RAD_S);
+                   gyr_raw_to_rads((int16_t)gyr_x),
+                   gyr_raw_to_rads((int16_t)gyr_y),
+                   gyr_raw_to_rads((int16_t)gyr_z));
 
             if (ret != ESP_OK) {
                 printf("Error while reading: %s \n", esp_err_to_name(ret));
@@ -1064,9 +1077,9 @@ void app_main(void) {
     ESP_ERROR_CHECK(initialization());
     ESP_ERROR_CHECK(set_power_mode(SENSOR_POWER_MODE));
     ESP_ERROR_CHECK(set_acc_odr(SENSOR_ACC_ODR));
-    // ESP_ERROR_CHECK(set_acc_range(SENSOR_ACC_RANGE));
+    ESP_ERROR_CHECK(set_acc_range(SENSOR_ACC_RANGE));
     ESP_ERROR_CHECK(set_gyr_odr(SENSOR_GYR_ODR));
-    // ESP_ERROR_CHECK(set_gyr_range(SENSOR_GYR_RANGE));
+    ESP_ERROR_CHECK(set_gyr_range(SENSOR_GYR_RANGE));
     internal_status();
     printf("Started reading\n");
     reading_loop();
