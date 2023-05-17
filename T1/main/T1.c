@@ -51,6 +51,8 @@ uint8_t REG_INIT_DATA = 0x5E;
 uint8_t REG_INTERNAL_STATUS = 0x21;
 uint8_t REG_INT_STATUS = 0x03;
 uint8_t REG_DATA_8 = 0x0C;
+uint8_t REG_ANYMO_2 = 0x3E; //Registro para activar anymotion
+uint8_t REG_ANYMO_1 = 0x3C; //Registro para configurar anymotion
 
 // Config variables for sensor configuration and control
 #define SENSOR_POWER_MODE CONFIG_SENSOR_POWER_MODE
@@ -58,6 +60,10 @@ uint8_t REG_DATA_8 = 0x0C;
 #define SENSOR_GYR_RANGE CONFIG_SENSOR_GYR_RANGE
 #define SENSOR_ACC_ODR CONFIG_SENSOR_ACC_ODR
 #define SENSOR_GYR_ODR CONFIG_SENSOR_GYR_ODR
+#define SENSOR_ANYMOTION_MODE CONFIG_ANYMOTION_MODE
+
+static const char *TAG = "BMI270 example";
+
 //=============================================================================
 //                              BMI270 functions
 //=============================================================================
@@ -931,7 +937,7 @@ esp_err_t set_and_check_mask(i2c_port_t i2c_num, uint8_t *reg, uint8_t *value,
 
 esp_err_t set_power_mode(uint8_t mode) {
     printf("Setting power mode: ");
-    uint8_t val_pwr_ctrl, val_acc_conf, val_gyr_conf, val_pwr_conf;
+    uint16_t val_pwr_ctrl, val_acc_conf, val_gyr_conf, val_pwr_conf;
     val_pwr_ctrl = val_acc_conf = val_gyr_conf = val_pwr_conf = 0x00;
     esp_err_t ret = ESP_OK;
     switch (mode) {
@@ -944,7 +950,7 @@ esp_err_t set_power_mode(uint8_t mode) {
         case 1:
             printf("PM_NORMAL\n");
             val_pwr_ctrl = 0x0E;
-            val_acc_conf = 0xA9;
+            val_acc_conf = 0xA8;
             val_gyr_conf = 0xA9;
             val_pwr_conf = 0x02;
             break;
@@ -1007,7 +1013,37 @@ esp_err_t set_gyr_range(uint8_t value) {
 //=============================================================================
 //                             ANYMOTION
 //=============================================================================
+esp_err_t set_anymotion_mode(uint8_t mode){
+    uint8_t val_anymotion_enable; 
+    esp_err_t ret = ESP_OK;
+    printf("Enabling anymotion: ");
+    val_anymotion_enable = 0x8000; //1 en el bit 15, ver pag 102
+    ret = set_and_check(I2C_BMI_NUM, &REG_ANYMO_2, &val_anymotion_enable, 15,
+                      "ANYMOTION");
 
+    printf("Setting number of axis for anymotion: ");
+    uint16_t val_any_1_x = 0x2000; //Anymotion en eje x //Solo bit 13 en 1, ver pag 101
+    uint16_t val_any_1_y = 0x4000; //Anymotion en eje y //Solo bit 14 en 1, ver pag 102
+    uint16_t val_any_1_z = 0x8000; //Anymotion en eje z //Solo bit 15 es 1, ver pag 102
+    switch (mode)
+    {
+    case 0: //Anymotion en un solo eje, x
+        val_anymo_1 = val_any_1_x; 
+        break;
+    case 1: //Anymotion en dos ejes, x e y
+        val_anymo_1 = val_any_1_x | val_any_1_y;
+        break;
+    case 2: //Anymotion en tres ejes, x, y, z
+        val_anymo_1 = val_any_1_x | val_any_1_y | val_any_1_z;
+        break;
+    default:
+        break;
+    }
+    ret = set_and_check(I2C_BMI_NUM, &REG_ANYMO_1, &mode, 16,
+                      "ANYMOTION");
+    //Nota, se usa duration y threshold por defecto //Ver paginas 101 y 102 en registros anymo_1 y anymo_2
+    return ret;
+}
 //=============================================================================
 //                             MAIN LOOP
 //=============================================================================
@@ -1050,6 +1086,13 @@ esp_err_t reading_loop(void) {
             gyr_x = combine_bytes(data_data8[7], data_data8[6]);
             gyr_y = combine_bytes(data_data8[9], data_data8[8]);
             gyr_z = combine_bytes(data_data8[11], data_data8[10]);
+            ESP_LOGI(TAG, "AcC: (%.2f, %.2f, %.2f) m/s² (%.2f, %.2f, %.2f) g | ",
+                   accel_raw_to_ms2((int16_t)acc_x),
+                   accel_raw_to_ms2((int16_t)acc_y),
+                   accel_raw_to_ms2((int16_t)acc_z),
+                   accel_raw_to_g((int16_t)acc_x),
+                   accel_raw_to_g((int16_t)acc_y),
+                   accel_raw_to_g((int16_t)acc_z));
             printf("AcC: (%.2f, %.2f, %.2f) m/s² (%.2f, %.2f, %.2f) g | ",
                    accel_raw_to_ms2((int16_t)acc_x),
                    accel_raw_to_ms2((int16_t)acc_y),
@@ -1076,6 +1119,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(chip_id());
     ESP_ERROR_CHECK(initialization());
     ESP_ERROR_CHECK(set_power_mode(SENSOR_POWER_MODE));
+    ESP_ERROR_CHECK(set_anymotion_mode(SENSOR_ANYMOTION_MODE));
     ESP_ERROR_CHECK(set_acc_odr(SENSOR_ACC_ODR));
     ESP_ERROR_CHECK(set_acc_range(SENSOR_ACC_RANGE));
     ESP_ERROR_CHECK(set_gyr_odr(SENSOR_GYR_ODR));
