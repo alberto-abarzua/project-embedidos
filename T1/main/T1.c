@@ -51,8 +51,8 @@ uint8_t REG_INIT_DATA = 0x5E;
 uint8_t REG_INTERNAL_STATUS = 0x21;
 uint8_t REG_INT_STATUS = 0x03;
 uint8_t REG_DATA_8 = 0x0C;
-uint8_t REG_ANYMO_2 = 0x3E; //Registro para activar anymotion
-uint8_t REG_ANYMO_1 = 0x3C; //Registro para configurar anymotion
+uint8_t REG_ANYMO_2 = 0x3E;  // Registro para activar anymotion
+uint8_t REG_ANYMO_1 = 0x3C;  // Registro para configurar anymotion
 
 // Config variables for sensor configuration and control
 #define SENSOR_POWER_MODE CONFIG_SENSOR_POWER_MODE
@@ -1013,35 +1013,39 @@ esp_err_t set_gyr_range(uint8_t value) {
 //=============================================================================
 //                             ANYMOTION
 //=============================================================================
-esp_err_t set_anymotion_mode(uint8_t mode){
-    uint8_t val_anymotion_enable; 
+esp_err_t set_anymotion_mode(uint8_t mode) {
+    uint8_t val_anymotion_enable;
     esp_err_t ret = ESP_OK;
     printf("Enabling anymotion: ");
-    val_anymotion_enable = 0x8000; //1 en el bit 15, ver pag 102
-    ret = set_and_check(I2C_BMI_NUM, &REG_ANYMO_2, &val_anymotion_enable, 15,
-                      "ANYMOTION");
+    val_anymotion_enable = 0x8000;  // 1 en el bit 15, ver pag 102
+    ret = set_and_check_mask(I2C_BMI_NUM, &REG_ANYMO_2, &val_anymotion_enable,
+                             "ANYMOTION", 0x8000);
 
     printf("Setting number of axis for anymotion: ");
-    uint16_t val_any_1_x = 0x2000; //Anymotion en eje x //Solo bit 13 en 1, ver pag 101
-    uint16_t val_any_1_y = 0x4000; //Anymotion en eje y //Solo bit 14 en 1, ver pag 102
-    uint16_t val_any_1_z = 0x8000; //Anymotion en eje z //Solo bit 15 es 1, ver pag 102
-    switch (mode)
-    {
-    case 1: //Anymotion en un solo eje, x
-        val_anymo_1 = val_any_1_x; 
-        break;
-    case 2: //Anymotion en dos ejes, x e y
-        val_anymo_1 = val_any_1_x | val_any_1_y;
-        break;
-    case 3: //Anymotion en tres ejes, x, y, z
-        val_anymo_1 = val_any_1_x | val_any_1_y | val_any_1_z;
-        break;
-    default:
-        break;
+    uint16_t val_any_1_x =
+        0x2000;  // Anymotion en eje x //Solo bit 13 en 1, ver pag 101
+    uint16_t val_any_1_y =
+        0x4000;  // Anymotion en eje y //Solo bit 14 en 1, ver pag 102
+    uint16_t val_any_1_z =
+        0x8000;  // Anymotion en eje z //Solo bit 15 es 1, ver pag 102
+    uint16_t val_anymo_1 = 0x0000;
+    switch (mode) {
+        case 1:  // Anymotion en un solo eje, x
+            val_anymo_1 = val_any_1_x;
+            break;
+        case 2:  // Anymotion en dos ejes, x e y
+            val_anymo_1 = val_any_1_x | val_any_1_y;
+            break;
+        case 3:  // Anymotion en tres ejes, x, y, z
+            val_anymo_1 = val_any_1_x | val_any_1_y | val_any_1_z;
+            break;
+        default:
+            break;
     }
-    ret = set_and_check(I2C_BMI_NUM, &REG_ANYMO_1, &mode, 16,
-                      "ANYMOTION");
-    //Nota, se usa duration y threshold por defecto //Ver paginas 101 y 102 en registros anymo_1 y anymo_2
+    ret = set_and_check_mask(I2C_BMI_NUM, &REG_ANYMO_1, &val_anymo_1,
+                             val_anymo_1, "ANYMOTION");
+    // Nota, se usa duration y threshold por defecto //Ver paginas 101 y 102 en
+    // registros anymo_1 y anymo_2
     return ret;
 }
 //=============================================================================
@@ -1086,13 +1090,13 @@ esp_err_t reading_loop(void) {
             gyr_x = combine_bytes(data_data8[7], data_data8[6]);
             gyr_y = combine_bytes(data_data8[9], data_data8[8]);
             gyr_z = combine_bytes(data_data8[11], data_data8[10]);
-            ESP_LOGI(TAG, "AcC: (%.2f, %.2f, %.2f) m/s² (%.2f, %.2f, %.2f) g | ",
-                   accel_raw_to_ms2((int16_t)acc_x),
-                   accel_raw_to_ms2((int16_t)acc_y),
-                   accel_raw_to_ms2((int16_t)acc_z),
-                   accel_raw_to_g((int16_t)acc_x),
-                   accel_raw_to_g((int16_t)acc_y),
-                   accel_raw_to_g((int16_t)acc_z));
+            ESP_LOGI(
+                TAG, "AcC: (%.2f, %.2f, %.2f) m/s² (%.2f, %.2f, %.2f) g | ",
+                accel_raw_to_ms2((int16_t)acc_x),
+                accel_raw_to_ms2((int16_t)acc_y),
+                accel_raw_to_ms2((int16_t)acc_z),
+                accel_raw_to_g((int16_t)acc_x), accel_raw_to_g((int16_t)acc_y),
+                accel_raw_to_g((int16_t)acc_z));
             printf("AcC: (%.2f, %.2f, %.2f) m/s² (%.2f, %.2f, %.2f) g | ",
                    accel_raw_to_ms2((int16_t)acc_x),
                    accel_raw_to_ms2((int16_t)acc_y),

@@ -1,7 +1,6 @@
 menu "BMI270 CONFIG"
 
 
-    # POWER MODE
     config ANYMOTION_MODE 
         int 
         help
@@ -24,7 +23,26 @@ menu "BMI270 CONFIG"
                     Any motion detection is enabled on three axis, x, y and z axis.
                     
         endchoice
+        
+    if ANYMOTION_MODE_1AXIS
+        config ANYMOTION_MODE
+            int
+            default 1
+    endif
     
+    if ANYMOTION_MODE_2AXIS
+        config ANYMOTION_MODE
+            int
+            default 2
+    endif
+    
+    if ANYMOTION_MODE_3AXIS
+        config ANYMOTION_MODE
+            int
+            default 3
+    endif
+    
+
     config SENSOR_POWER_MODE
         int
         help
