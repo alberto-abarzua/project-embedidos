@@ -28,6 +28,7 @@
 #define ACK_VAL 0x0
 #define NACK_VAL 0x1
 #define DATA_READY_MASK 0x80
+#define ANYMOTION_MASK 0b1000000
 
 // Conversion factors for raw sensor data
 #define MAX_INT_VALUE_SENSOR 32768.0
@@ -49,10 +50,11 @@ uint8_t REG_PWR_CONF_ADVPOWERSAVE = 0x7C;
 uint8_t REG_INIT_CTRL = 0x59;
 uint8_t REG_INIT_DATA = 0x5E;
 uint8_t REG_INTERNAL_STATUS = 0x21;
+uint8_t REG_INT_STATUS_0 = 0x1C;
 uint8_t REG_INT_STATUS = 0x03;
 uint8_t REG_DATA_8 = 0x0C;
-uint8_t REG_ANYMO_2 = 0x3E;  // Registro para activar anymotion
 uint8_t REG_ANYMO_1 = 0x3C;  // Registro para configurar anymotion
+uint8_t REG_ANYMO_2 = 0x3E;  // Registro para activar anymotion
 
 // Config variables for sensor configuration and control
 #define SENSOR_POWER_MODE CONFIG_SENSOR_POWER_MODE
@@ -815,13 +817,13 @@ esp_err_t chip_id(void) {
 
     ret = bmi_read(I2C_BMI_NUM, &REG_ID, &tmp, 1);
     if (ret != ESP_OK) {
-        printf("Failed to read CHIP_ID: %d\n\n", ret);
+        ESP_LOGE(TAG, "Failed to read CHIP_ID: %d\n\n", ret);
         return ret;
     }
 
-    printf("Value of CHIP_ID: %2X \n\n", tmp);
+    ESP_LOGI(TAG, "Value of CHIP_ID: %2X \n\n", tmp);
     if (tmp != 0x24) {
-        printf("Chip not recognized. \nCHIP ID: %2x\n\n", tmp);  // %2X
+        ESP_LOGE(TAG, "Chip not recognized. \nCHIP ID: %2x\n\n", tmp);  // %2X
         return ESP_FAIL;
     }
 
@@ -841,7 +843,7 @@ esp_err_t initialization(void) {
     uint8_t val_init_ctrl = 0x00;
     uint8_t val_init_ctrl2 = 0x01;
 
-    printf("Initializing ...\n");
+    ESP_LOGI(TAG, "Initializing ...\n");
 
     bmi_write(I2C_BMI_NUM, &REG_PWR_CONF_ADVPOWERSAVE,
               &val_pwr_conf_advpowersave, 1);
@@ -854,9 +856,9 @@ esp_err_t initialization(void) {
     ret = bmi_write(I2C_BMI_NUM, &REG_INIT_DATA, (uint8_t *)bmi270_config_file,
                     config_size);
     if (ret != ESP_OK) {
-        printf("\nErorr loding config_file\n");
+        ESP_LOGE(TAG, "\nErorr loding config_file\n");
     } else {
-        printf("\nSuccesfully loaded config_file\n");
+        ESP_LOGI(TAG, "\nSuccesfully loaded config_file\n");
     }
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
@@ -864,9 +866,9 @@ esp_err_t initialization(void) {
     ret = bmi_write(I2C_BMI_NUM, &REG_INIT_CTRL, &val_init_ctrl2, 1);
 
     if (ret != ESP_OK) {
-        printf("\nError in initialization: %s \n", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "\nError in initialization: %s \n", esp_err_to_name(ret));
     } else {
-        printf("\nInitialization: OK!\n\n");
+        ESP_LOGI(TAG, "\nInitialization: OK!\n\n");
     }
 
     return ret;
@@ -876,7 +878,7 @@ void internal_status(void) {
     uint8_t tmp;
 
     bmi_read(I2C_BMI_NUM, &REG_INTERNAL_STATUS, &tmp, 1);
-    printf("Internal Status: %2X\n\n", tmp);
+    ESP_LOGI(TAG, "Internal Status: %2X\n\n", tmp);
 }
 
 void check_initialization(void) {
@@ -885,50 +887,77 @@ void check_initialization(void) {
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
     bmi_read(I2C_BMI_NUM, &REG_INTERNAL_STATUS, &tmp, 1);
-    printf("Init_status.0: %x \n", (tmp & 0b00001111));
+    ESP_LOGI(TAG, "Init_status.0: %x \n", (tmp & 0b00001111));
     if ((tmp & 0b00001111) == 1) {
-        printf("Initialization check: OK\n\n");
+        ESP_LOGI(TAG, "Initialization check: OK\n\n");
     } else {
-        printf("Initialization failed\n\n");
+        ESP_LOGE(TAG, "Initialization failed\n\n");
         exit(EXIT_SUCCESS);
     }
 }
+void intToBinaryString(int n, char *binaryString, int size) {
+    if (size < 33) return;  // Check if the array is large enough
 
-esp_err_t set_and_check(i2c_port_t i2c_num, uint8_t *reg, uint8_t *value,
-                        size_t size, char *help_str) {
+    binaryString[32] = '\0';  // Null-terminate the string at the end
+
+    for (int i = 31; i >= 0; --i, n >>= 1) {
+        binaryString[i] = (n & 1) + '0';  // Convert bit to '0' or '1' character
+    }
+}
+
+void printBin(char *help_tag, int number) {
+    char binaryString[33];
+    intToBinaryString(number, binaryString, 33);
+    ESP_LOGI(TAG, "%s: %s\n", help_tag, binaryString);
+}
+esp_err_t set_check(i2c_port_t i2c_num, uint8_t *reg, uint8_t *value,
+                    size_t size, char *help_str) {
     esp_err_t ret = ESP_OK;
     ret = bmi_write(I2C_BMI_NUM, reg, value, size);
+
     if (ret != ESP_OK) {
-        printf("Failed to write %s: %d\n\n", help_str, ret);
+        ESP_LOGE(TAG, "Failed to write %s: %d\n\n", help_str, ret);
         return ret;
     }
-    uint8_t tmp;
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
-    ret = bmi_read(I2C_BMI_NUM, reg, &tmp, size);
+
+    uint8_t *tmp = malloc(size);
+
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+
+    ret = bmi_read(I2C_BMI_NUM, reg, tmp, size);
     if (ret != ESP_OK) {
-        printf("Failed to read %s: %d\n\n", help_str, ret);
-    } else if (tmp != *value) {
-        printf("Failed to set %s: %d expected: %d, was %d\n\n", help_str, ret,
-               *value, tmp);
-        ret = ESP_FAIL;
+        ESP_LOGE(TAG, "Failed to read %s: %d\n\n", help_str, ret);
     }
-    if (ret == ESP_OK) {
-        printf("Set %s: %d\n\n", help_str, *value);
+    if (size == 2) {
+        printBin(help_str, *((uint16_t *)value));
+        printBin(help_str, *((uint16_t *)tmp));
     }
+    if (size == 1) {
+        printBin(help_str, *(value));
+        printBin(help_str, *(tmp));
+    }
+    for (int i = 0; i < size; i++) {
+        if (tmp[i] != value[i]) {
+            ESP_LOGE(TAG, "Failed to set %s: %d\n\n", help_str, ret);
+            return ESP_FAIL;
+        }
+    }
+    free(tmp);
+    ESP_LOGI(TAG, "Set %s: %d\n\n", help_str, *value);
     return ret;
 }
 
-esp_err_t set_and_check_mask(i2c_port_t i2c_num, uint8_t *reg, uint8_t *value,
-                             uint8_t mask, char *help_str) {
-    uint8_t current_value;
-    esp_err_t ret;
-    ret = bmi_read(I2C_BMI_NUM, reg, &current_value, 1);
+esp_err_t read_check(i2c_port_t i2c_num, uint8_t *reg, uint8_t *value,
+                     size_t size, char *help_str) {
+    esp_err_t ret = ESP_OK;
+
+    ret = bmi_read(I2C_BMI_NUM, reg, value, size);
     if (ret != ESP_OK) {
-        printf("Failed to read %s: %d\n\n", help_str, ret);
-        return ret;
+        ESP_LOGE(TAG, "Failed to read %s: %d\n\n", help_str, ret);
+    } else {
+        ESP_LOGI(TAG, "Read %s: %d\n\n", help_str, *value);
     }
-    *value = (*value & mask) | (current_value & ~mask);
-    return set_and_check(i2c_num, reg, value, 1, help_str);
+    return ret;
 }
 
 //=============================================================================
@@ -936,51 +965,47 @@ esp_err_t set_and_check_mask(i2c_port_t i2c_num, uint8_t *reg, uint8_t *value,
 //=============================================================================
 
 esp_err_t set_power_mode(uint8_t mode) {
-    printf("Setting power mode: ");
-    uint16_t val_pwr_ctrl, val_acc_conf, val_gyr_conf, val_pwr_conf;
+    ESP_LOGI(TAG, "Setting power mode: ");
+    uint8_t val_pwr_ctrl, val_acc_conf, val_gyr_conf, val_pwr_conf;
     val_pwr_ctrl = val_acc_conf = val_gyr_conf = val_pwr_conf = 0x00;
     esp_err_t ret = ESP_OK;
     switch (mode) {
         case 0:
-            printf("PM_LOW_POWER\n");
+            ESP_LOGI(TAG, "PM_LOW_POWER\n");
             val_pwr_ctrl = 0x04;
             val_acc_conf = 0x17;
             val_pwr_conf = 0x03;
             break;
         case 1:
-            printf("PM_NORMAL\n");
+            ESP_LOGI(TAG, "PM_NORMAL\n");
             val_pwr_ctrl = 0x0E;
             val_acc_conf = 0xA8;
             val_gyr_conf = 0xA9;
             val_pwr_conf = 0x02;
             break;
         case 2:
-            printf("PM_PERFORMANCE\n");
+            ESP_LOGI(TAG, "PM_PERFORMANCE\n");
             val_pwr_ctrl = 0x0E;
             val_acc_conf = 0xA8;
             val_gyr_conf = 0xE9;
             val_pwr_conf = 0x02;
             break;
         case 3:
-            printf("No change\n");
+            ESP_LOGI(TAG, "No change\n");
             return ret;
         default:
-            printf("ERROR\n");
+            ESP_LOGI(TAG, "ERROR\n");
             ret = ESP_FAIL;
             break;
     }
     if (val_pwr_ctrl)
-        set_and_check(I2C_BMI_NUM, &REG_PWR_CTRL, &val_pwr_ctrl, 1,
-                      "POWER_MODE");
+        set_check(I2C_BMI_NUM, &REG_PWR_CTRL, &val_pwr_ctrl, 1, "POWER_MODE");
     if (val_acc_conf)
-        set_and_check(I2C_BMI_NUM, &REG_ACC_CONF, &val_acc_conf, 1,
-                      "POWER_MODE");
+        set_check(I2C_BMI_NUM, &REG_ACC_CONF, &val_acc_conf, 1, "POWER_MODE");
     if (val_gyr_conf)
-        set_and_check(I2C_BMI_NUM, &REG_GYR_CONF, &val_gyr_conf, 1,
-                      "POWER_MODE");
+        set_check(I2C_BMI_NUM, &REG_GYR_CONF, &val_gyr_conf, 1, "POWER_MODE");
     if (val_pwr_conf)
-        set_and_check(I2C_BMI_NUM, &REG_PWR_CONF, &val_pwr_conf, 1,
-                      "POWER_MODE");
+        set_check(I2C_BMI_NUM, &REG_PWR_CONF, &val_pwr_conf, 1, "POWER_MODE");
     return ret;
 }
 
@@ -989,65 +1014,124 @@ esp_err_t set_power_mode(uint8_t mode) {
 //=============================================================================
 
 esp_err_t set_acc_odr(uint8_t value) {
-    return set_and_check_mask(I2C_BMI_NUM, &REG_ACC_CONF, &value, 0b00001111,
-                              "ACC_CONF");
+    esp_err_t ret = ESP_OK;
+    uint8_t cur;
+    uint8_t mask = 0b00001111;
+
+    ret = read_check(I2C_BMI_NUM, &REG_ACC_CONF, &cur, 1, "ACC_CONF: odr");
+
+    cur &= ~mask;
+    cur |= value;
+
+    ret = set_check(I2C_BMI_NUM, &REG_ACC_CONF, &cur, 1, "ACC_CONF: odr");
+    return ret;
 }
 
 esp_err_t set_acc_range(uint8_t value) {
-    return set_and_check_mask(I2C_BMI_NUM, &REG_ACC_RANGE, &value, 0b00000011,
-                              "ACC_RANGE");
+    esp_err_t ret = ESP_OK;
+    uint8_t mask = 0b00000011;
+    uint8_t cur;
+    ret = read_check(I2C_BMI_NUM, &REG_ACC_RANGE, &cur, 1, "ACC_RANGE: range");
+
+    cur &= ~mask;
+    cur |= value;
+
+    ret = set_check(I2C_BMI_NUM, &REG_ACC_RANGE, &cur, 1, "ACC_RANGE: range");
+    return ret;
 }
 //=============================================================================
 //                             GYR CONF AND RANGE
 //=============================================================================
 esp_err_t set_gyr_odr(uint8_t value) {
-    return set_and_check_mask(I2C_BMI_NUM, &REG_GYR_CONF, &value, 0b00001111,
-                              "GYR_CONF");
+    esp_err_t ret = ESP_OK;
+    uint8_t mask = 0b00001111;
+    uint8_t cur;
+    ret = read_check(I2C_BMI_NUM, &REG_GYR_CONF, &cur, 1, "GYR_CONF: odr");
+
+    cur &= ~mask;
+    cur |= value;
+
+    ret = set_check(I2C_BMI_NUM, &REG_GYR_CONF, &cur, 1, "GYR_CONF: odr");
+    return ret;
 }
 
 esp_err_t set_gyr_range(uint8_t value) {
-    return set_and_check_mask(I2C_BMI_NUM, &REG_GYR_RANGE, &value, 0b00000111,
-                              "GYR_RANGE");
+    esp_err_t ret = ESP_OK;
+    uint8_t mask = 0b00000111;
+    uint8_t cur;
+    ret = read_check(I2C_BMI_NUM, &REG_GYR_RANGE, &cur, 1, "GYR_CONF: range");
+
+    cur &= ~mask;
+    cur |= value;
+
+    ret = set_check(I2C_BMI_NUM, &REG_GYR_RANGE, &cur, 1, "GYR_CONF: range");
+    return ret;
 }
 
 //=============================================================================
 //                             ANYMOTION
 //=============================================================================
-esp_err_t set_anymotion_mode(uint8_t mode) {
-    uint8_t val_anymotion_enable;
-    esp_err_t ret = ESP_OK;
-    printf("Enabling anymotion: ");
-    val_anymotion_enable = 0x8000;  // 1 en el bit 15, ver pag 102
-    ret = set_and_check_mask(I2C_BMI_NUM, &REG_ANYMO_2, &val_anymotion_enable,
-                             "ANYMOTION", 0x8000);
 
-    printf("Setting number of axis for anymotion: ");
-    uint16_t val_any_1_x =
-        0x2000;  // Anymotion en eje x //Solo bit 13 en 1, ver pag 101
-    uint16_t val_any_1_y =
-        0x4000;  // Anymotion en eje y //Solo bit 14 en 1, ver pag 102
-    uint16_t val_any_1_z =
-        0x8000;  // Anymotion en eje z //Solo bit 15 es 1, ver pag 102
-    uint16_t val_anymo_1 = 0x0000;
-    switch (mode) {
-        case 1:  // Anymotion en un solo eje, x
-            val_anymo_1 = val_any_1_x;
-            break;
-        case 2:  // Anymotion en dos ejes, x e y
-            val_anymo_1 = val_any_1_x | val_any_1_y;
-            break;
-        case 3:  // Anymotion en tres ejes, x, y, z
-            val_anymo_1 = val_any_1_x | val_any_1_y | val_any_1_z;
-            break;
-        default:
-            break;
-    }
-    ret = set_and_check_mask(I2C_BMI_NUM, &REG_ANYMO_1, &val_anymo_1,
-                             val_anymo_1, "ANYMOTION");
-    // Nota, se usa duration y threshold por defecto //Ver paginas 101 y 102 en
-    // registros anymo_1 y anymo_2
+esp_err_t anymotion_setup_anymo_2(uint16_t threshold) {
+    esp_err_t ret = ESP_OK;
+    uint16_t cur = 0;
+
+    cur |= (1 << 15);     // enable anymotion
+    cur |= (0x07 << 11);  // set ouput to 6 bit of REG_INT_STATUS_0
+    cur |= threshold;     // bit 10..0
+
+    ret = set_check(I2C_BMI_NUM, &REG_ANYMO_2, (uint8_t *)&cur, 2,
+                    "ANYMO_2: enable");
     return ret;
 }
+
+esp_err_t anymotion_setup_anymo_1(uint16_t duration) {
+    esp_err_t ret = ESP_OK;
+    uint16_t cur = 0;
+
+    cur |= duration;
+    // enable all 3 axis
+    cur |= (1 << 15) | (1 << 14) | (1 << 13);
+
+    ret = set_check(I2C_BMI_NUM, &REG_ANYMO_1, (uint8_t *)&cur, 1,
+                    "ANYMO_1: axis");
+    return ret;
+}
+
+esp_err_t set_thresh_dur(uint8_t threshold, uint8_t duration) {
+    esp_err_t ret = ESP_OK;
+    uint8_t cur = 0;
+
+    cur |= threshold;
+
+    ret = set_check(I2C_BMI_NUM, &REG_ANYMO_2, (uint8_t *)&cur, 1,
+                    "ANYMO_2: threshold");
+
+    cur = 0;
+    cur |= duration;
+
+    ret = set_check(I2C_BMI_NUM, &REG_ANYMO_1, (uint8_t *)&cur, 1,
+                    "ANYMO_1: duration");
+    return ret;
+}
+
+esp_err_t setup_anymotion(uint8_t mode) {
+    esp_err_t ret = ESP_OK;
+    ESP_ERROR_CHECK(anymotion_setup_anymo_2(0xAA));
+
+    ESP_ERROR_CHECK(anymotion_setup_anymo_1(5));
+
+    // set_thresh_dur(0xAA, 5);
+    uint16_t anymo1, anymo2;
+    read_check(I2C_BMI_NUM, &REG_ANYMO_1, (uint8_t *)&anymo1, 2, "ANYMO_1");
+    read_check(I2C_BMI_NUM, &REG_ANYMO_2, (uint8_t *)&anymo2, 2, "ANYMO_2");
+    printBin("ANYMO_1", anymo1);
+    printBin("ANYMO_2", anymo2);
+
+    // sleep
+    return ret;
+}
+
 //=============================================================================
 //                             MAIN LOOP
 //=============================================================================
@@ -1067,52 +1151,54 @@ uint16_t combine_bytes(uint8_t msb, uint8_t lsb) {
     return ((uint16_t)msb << 8) | lsb;
 }
 
-int is_data_ready(uint8_t status) {
+int is_data_ready() {
+    uint8_t status;
+    bmi_read(I2C_BMI_NUM, &REG_INT_STATUS, &status, 1);
     return (status & DATA_READY_MASK) == DATA_READY_MASK;
 }
 
-esp_err_t reading_loop(void) {
-    uint8_t reg_int_status_val;
+int anymotion_detected() {
+    uint8_t status;
+    bmi_read(I2C_BMI_NUM, &REG_INT_STATUS_0, &status, 1);
+
+    int res = (status & ANYMOTION_MASK) == ANYMOTION_MASK;
+    if (res) {
+        ESP_LOGI(TAG, "Anymotion detected\n");
+    }
+    return res;
+}
+
+void print_data() {
+    esp_err_t ret = ESP_OK;
     uint8_t data_data8[12];
     uint16_t acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z;
-    esp_err_t ret;
+    ret = bmi_read(I2C_BMI_NUM, &REG_DATA_8, (uint8_t *)data_data8,
+                   sizeof(data_data8));
+    acc_x = combine_bytes(data_data8[1], data_data8[0]);
+    acc_y = combine_bytes(data_data8[3], data_data8[2]);
+    acc_z = combine_bytes(data_data8[5], data_data8[4]);
+    gyr_x = combine_bytes(data_data8[7], data_data8[6]);
+    gyr_y = combine_bytes(data_data8[9], data_data8[8]);
+    gyr_z = combine_bytes(data_data8[11], data_data8[10]);
+    ESP_LOGI(TAG,
+             "AcC: (%.2f, %.2f, %.2f) m/s² (%.2f, %.2f, %.2f) g |  Gy: (%.2f, "
+             "%.2f, %.2f) rad/s",
+             accel_raw_to_ms2((int16_t)acc_x), accel_raw_to_ms2((int16_t)acc_y),
+             accel_raw_to_ms2((int16_t)acc_z), accel_raw_to_g((int16_t)acc_x),
+             accel_raw_to_g((int16_t)acc_y), accel_raw_to_g((int16_t)acc_z),
+             gyr_raw_to_rads((int16_t)gyr_x), gyr_raw_to_rads((int16_t)gyr_y),
+             gyr_raw_to_rads((int16_t)gyr_z));
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error while reading: %s \n", esp_err_to_name(ret));
+    }
+}
+
+void reading_loop(void) {
     while (1) {
-        bmi_read(I2C_BMI_NUM, &REG_INT_STATUS, &reg_int_status_val, 1);
-        if (is_data_ready(reg_int_status_val)) {  // if the reg is 0x80 There is
-                                                  // data available
-            ret = bmi_read(I2C_BMI_NUM, &REG_DATA_8, (uint8_t *)data_data8,
-                           sizeof(data_data8));
-
-            acc_x = combine_bytes(data_data8[1], data_data8[0]);
-            acc_y = combine_bytes(data_data8[3], data_data8[2]);
-            acc_z = combine_bytes(data_data8[5], data_data8[4]);
-
-            gyr_x = combine_bytes(data_data8[7], data_data8[6]);
-            gyr_y = combine_bytes(data_data8[9], data_data8[8]);
-            gyr_z = combine_bytes(data_data8[11], data_data8[10]);
-            ESP_LOGI(
-                TAG, "AcC: (%.2f, %.2f, %.2f) m/s² (%.2f, %.2f, %.2f) g | ",
-                accel_raw_to_ms2((int16_t)acc_x),
-                accel_raw_to_ms2((int16_t)acc_y),
-                accel_raw_to_ms2((int16_t)acc_z),
-                accel_raw_to_g((int16_t)acc_x), accel_raw_to_g((int16_t)acc_y),
-                accel_raw_to_g((int16_t)acc_z));
-            printf("AcC: (%.2f, %.2f, %.2f) m/s² (%.2f, %.2f, %.2f) g | ",
-                   accel_raw_to_ms2((int16_t)acc_x),
-                   accel_raw_to_ms2((int16_t)acc_y),
-                   accel_raw_to_ms2((int16_t)acc_z),
-                   accel_raw_to_g((int16_t)acc_x),
-                   accel_raw_to_g((int16_t)acc_y),
-                   accel_raw_to_g((int16_t)acc_z));
-
-            printf("Gy: (%.2f, %.2f, %.2f) rad/s\n",
-                   gyr_raw_to_rads((int16_t)gyr_x),
-                   gyr_raw_to_rads((int16_t)gyr_y),
-                   gyr_raw_to_rads((int16_t)gyr_z));
-
-            if (ret != ESP_OK) {
-                printf("Error while reading: %s \n", esp_err_to_name(ret));
-            }
+        if (is_data_ready()) {
+            anymotion_detected();
+            print_data();
         }
     }
 }
@@ -1123,12 +1209,12 @@ void app_main(void) {
     ESP_ERROR_CHECK(chip_id());
     ESP_ERROR_CHECK(initialization());
     ESP_ERROR_CHECK(set_power_mode(SENSOR_POWER_MODE));
-    ESP_ERROR_CHECK(set_anymotion_mode(SENSOR_ANYMOTION_MODE));
     ESP_ERROR_CHECK(set_acc_odr(SENSOR_ACC_ODR));
     ESP_ERROR_CHECK(set_acc_range(SENSOR_ACC_RANGE));
     ESP_ERROR_CHECK(set_gyr_odr(SENSOR_GYR_ODR));
     ESP_ERROR_CHECK(set_gyr_range(SENSOR_GYR_RANGE));
+    // ESP_ERROR_CHECK(setup_anymotion(SENSOR_ANYMOTION_MODE));
     internal_status();
-    printf("Started reading\n");
+    ESP_LOGI(TAG, "Started reading\n");
     reading_loop();
 }
