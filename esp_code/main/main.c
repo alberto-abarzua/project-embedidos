@@ -1,9 +1,17 @@
 #include <stdio.h>
+#include <string.h>
 
 #include "driver/i2c.h"
+#include "driver/uart.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "math.h"
 #include "sdkconfig.h"
+
+#define BUF_SIZE (124)
+#define TXD_PIN (GPIO_NUM_1)
+#define RXD_PIN (GPIO_NUM_3)
 
 //=============================================================================
 //                              Defines and global variables
@@ -63,8 +71,74 @@ uint8_t REG_ANYMO_2 = 0x3E;  // Registro para activar anymotion
 #define SENSOR_ACC_ODR CONFIG_SENSOR_ACC_ODR
 #define SENSOR_GYR_ODR CONFIG_SENSOR_GYR_ODR
 #define SENSOR_ANYMOTION_MODE CONFIG_ANYMOTION_MODE
-
+#define REDIRECT_LOGS 1  // set to 0 to view logs on UART0
 static const char *TAG = "BMI270 example";
+
+//=============================================================================
+//                              Serial comunication functions
+//=============================================================================
+
+static int uart1_printf(const char *str, va_list ap) {
+    char *buf;
+    vasprintf(&buf, str, ap);
+    uart_write_bytes(UART_NUM_1, buf, strlen(buf));
+    free(buf);
+    return 0;
+}
+
+static void uart_setup() {
+    // Configure UART parameters
+    uart_config_t uart_config = {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+    };
+
+    uart_param_config(UART_NUM_0, &uart_config);
+    uart_param_config(UART_NUM_1, &uart_config);
+    uart_driver_install(UART_NUM_0, BUF_SIZE * 2, 0, 0, NULL, 0);
+    uart_driver_install(UART_NUM_1, BUF_SIZE * 2, 0, 0, NULL, 0);
+
+    // Redirect ESP log to UART1
+    if (REDIRECT_LOGS) esp_log_set_vprintf(uart1_printf);
+}
+
+int serial_read(char *buffer) {
+    char *ptr = buffer;
+    while (true) {
+        // Try to read a byte with a timeout of 0
+        int len = uart_read_bytes(UART_NUM_0, (uint8_t *)ptr, 1, 0);
+        if (len == 1) {
+            if (*ptr == ';') {
+                // End of message
+                return ptr - buffer;
+            }
+            ptr++;
+            if (ptr - buffer >= BUF_SIZE) {
+                // Buffer is full
+                return -1;
+            }
+        } else if (len == -1) {
+            // An error occurred
+            return -1;
+        } else {
+            // No data available
+            return -1;
+        }
+    }
+}
+
+int serial_write(const char *to_send, int len) {
+    char *to_send_with_semicolon = (char *)malloc(sizeof(char) * (len + 1)); // Extra space for the semicolon
+    memcpy(to_send_with_semicolon, to_send, len); // Copy the original data
+    to_send_with_semicolon[len] = '\0'; 
+    int txBytes = uart_write_bytes(UART_NUM_0, to_send_with_semicolon, len + 1); // len + 1 to include the semicolon
+    free(to_send_with_semicolon);
+    return txBytes;
+}
+
 
 //=============================================================================
 //                              BMI270 functions
@@ -1168,10 +1242,11 @@ int anymotion_detected() {
     return res;
 }
 
-void print_data() {
+void print_data(char * buf) {
     esp_err_t ret = ESP_OK;
     uint8_t data_data8[12];
     uint16_t acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z;
+    float f_acc_x, f_acc_y, f_acc_z, f_gyr_x, f_gyr_y, f_gyr_z,f_acc_x_g,f_acc_y_g,f_acc_z_g;
     ret = bmi_read(I2C_BMI_NUM, &REG_DATA_8, (uint8_t *)data_data8,
                    sizeof(data_data8));
     acc_x = combine_bytes(data_data8[1], data_data8[0]);
@@ -1180,41 +1255,142 @@ void print_data() {
     gyr_x = combine_bytes(data_data8[7], data_data8[6]);
     gyr_y = combine_bytes(data_data8[9], data_data8[8]);
     gyr_z = combine_bytes(data_data8[11], data_data8[10]);
+
+    f_acc_x = accel_raw_to_ms2((int16_t)acc_x);
+    f_acc_y = accel_raw_to_ms2((int16_t)acc_y);
+    f_acc_z = accel_raw_to_ms2((int16_t)acc_z);
+
+    f_acc_x_g = accel_raw_to_g((int16_t)acc_x);
+    f_acc_y_g = accel_raw_to_g((int16_t)acc_y);
+    f_acc_z_g = accel_raw_to_g((int16_t)acc_z);
+
+    f_gyr_x = gyr_raw_to_rads((int16_t)gyr_x);
+    f_gyr_y = gyr_raw_to_rads((int16_t)gyr_y);
+    f_gyr_z = gyr_raw_to_rads((int16_t)gyr_z);
+
     ESP_LOGI(TAG,
              "AcC: (%.2f, %.2f, %.2f) m/s² (%.2f, %.2f, %.2f) g |  Gy: (%.2f, "
              "%.2f, %.2f) rad/s",
-             accel_raw_to_ms2((int16_t)acc_x), accel_raw_to_ms2((int16_t)acc_y),
-             accel_raw_to_ms2((int16_t)acc_z), accel_raw_to_g((int16_t)acc_x),
-             accel_raw_to_g((int16_t)acc_y), accel_raw_to_g((int16_t)acc_z),
-             gyr_raw_to_rads((int16_t)gyr_x), gyr_raw_to_rads((int16_t)gyr_y),
-             gyr_raw_to_rads((int16_t)gyr_z));
+             f_acc_x, f_acc_y, f_acc_z, f_acc_x_g, f_acc_y_g, f_acc_z_g,
+             f_gyr_x, f_gyr_y, f_gyr_z);
 
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Error while reading: %s \n", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to read data: %d\n\n", ret);
+    }
+
+    int len;
+   
+    len = serial_read(buf);
+    if (len > 0) {
+        if (buf[0] == 'G' && buf[1] == 'A') {  // get acc
+            // write values to buf and send them
+            int loc = 2;
+            memcpy(buf + loc, &f_acc_x, 4);
+            loc += 4;
+            memcpy(buf + loc, &f_acc_y, 4);
+            loc += 4;
+            memcpy(buf + loc, &f_acc_z, 4);
+            loc += 4;
+            
+            memcpy(buf + loc, &f_acc_x_g, 4);
+            loc += 4;
+            memcpy(buf + loc, &f_acc_y_g, 4);
+            loc += 4;
+            memcpy(buf + loc, &f_acc_z_g, 4);
+
+            loc += 4;
+            memcpy(buf + loc, &f_gyr_x, 4);
+            loc += 4;
+            memcpy(buf + loc, &f_gyr_y, 4);
+            loc += 4;
+            memcpy(buf + loc, &f_gyr_z, 4);
+            loc += 4;
+            serial_write(buf, loc);
+
+        }
+
     }
 }
 
 void reading_loop(void) {
+     char * buf = malloc(BUF_SIZE);
     while (1) {
         if (is_data_ready()) {
             anymotion_detected();
-            print_data();
+            print_data(buf);
         }
     }
 }
 
+typedef struct sensor_config {
+    uint8_t acc_odr;
+    uint8_t acc_range;
+    uint8_t gyr_odr;
+    uint8_t gyr_range;
+    uint8_t bme_mode;
+    uint8_t selected_sensor;
+} sensor_config_t;
+
+void print_conf(sensor_config_t config) {
+    ESP_LOGI(TAG,
+             "Config: acc_odr: %d, acc_range: %d, gyr_odr: %d, gyr_range: %d, "
+             "bme_mode: %d\n",
+             config.acc_odr, config.acc_range, config.gyr_odr, config.gyr_range,
+             config.bme_mode);
+}
+
+sensor_config_t wait_config() {
+    char buf[BUF_SIZE];
+    sensor_config_t config;
+    ESP_LOGI(TAG, "Waiting for config\n");
+    while (1) {
+        int len = serial_read(buf);
+
+        buf[len] = '\0';  // Null-terminate the received data
+        ESP_LOGI(TAG, "Received: %s\n", buf);
+        if (len >= 8) {
+            ESP_LOGI(TAG, "Received: %c %c\n", buf[0], buf[1]);
+            if (buf[0] == 'C' && buf[1] == 'S') {
+                config.acc_range = buf[2];
+                config.acc_odr = buf[3];
+                config.gyr_range = buf[3];
+                config.gyr_odr = buf[5];
+                config.bme_mode = buf[6];
+                config.selected_sensor = buf[7];
+                print_conf(config);
+                break;
+            }
+        }
+    }
+    return config;
+}
+
 void app_main(void) {
-    ESP_ERROR_CHECK(bmi_init());
-    ESP_ERROR_CHECK(softreset());
-    ESP_ERROR_CHECK(chip_id());
-    ESP_ERROR_CHECK(initialization());
-    ESP_ERROR_CHECK(set_power_mode(SENSOR_POWER_MODE));
-    ESP_ERROR_CHECK(set_acc_odr(SENSOR_ACC_ODR));
-    ESP_ERROR_CHECK(set_acc_range(SENSOR_ACC_RANGE));
-    ESP_ERROR_CHECK(set_gyr_odr(SENSOR_GYR_ODR));
-    ESP_ERROR_CHECK(set_gyr_range(SENSOR_GYR_RANGE));
-    // ESP_ERROR_CHECK(setup_anymotion(SENSOR_ANYMOTION_MODE));
-    internal_status();
-    ESP_LOGI(TAG, "Started reading\n");
-    reading_loop();
+    uart_setup();
+    sensor_config_t config = wait_config();
+    if (config.selected_sensor == 0) {
+        serial_write("CF10", 4);
+        ESP_ERROR_CHECK(bmi_init());
+        ESP_ERROR_CHECK(softreset());
+        serial_write("CF20", 4);
+
+        ESP_ERROR_CHECK(chip_id());
+        ESP_ERROR_CHECK(initialization());
+        ESP_ERROR_CHECK(set_power_mode(SENSOR_POWER_MODE));
+        serial_write("CF65", 4);
+        //printf to uart0
+        ESP_ERROR_CHECK(set_acc_odr(config.acc_odr));
+        ESP_ERROR_CHECK(set_acc_range(config.acc_range));
+        serial_write("CF80", 4);
+
+        ESP_ERROR_CHECK(set_gyr_odr(config.gyr_odr));
+        ESP_ERROR_CHECK(set_gyr_range(config.gyr_range));
+
+        serial_write("CF100", 5);
+
+        // ESP_ERROR_CHECK(setup_anymotion(SENSOR_ANYMOTION_MODE));
+        internal_status();
+        ESP_LOGI(TAG, "Started reading\n");
+        reading_loop();
+    }
 }
