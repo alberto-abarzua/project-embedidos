@@ -1366,8 +1366,6 @@ sensor_config_t wait_config() {
 }
 
 void app_main(void) {
-    bme_main();
-    return;
     uart_setup();
     sensor_config_t config = wait_config();
     if (config.selected_sensor == 0) {
@@ -1394,5 +1392,12 @@ void app_main(void) {
         internal_status();
         ESP_LOGI(TAG, "Started reading\n");
         reading_loop();
+    }else{
+        uint8_t op_mode = BME68X_PARALLEL_MODE;
+        if (config.bme_mode == 1) { //Forced
+            op_mode = BME68X_FORCED_MODE;
+        }
+        bme_main(op_mode);
+
     }
 }

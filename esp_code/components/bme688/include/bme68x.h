@@ -51,7 +51,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-int bme_main();
+int bme_main(uint8_t);
 /**
  * \ingroup bme68x
  * \defgroup bme68xApiInit Initialization
