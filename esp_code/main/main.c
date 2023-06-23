@@ -8,7 +8,7 @@
 #include "freertos/task.h"
 #include "math.h"
 #include "sdkconfig.h"
-
+#include "bme68x.h"
 #define BUF_SIZE (124)
 #define TXD_PIN (GPIO_NUM_1)
 #define RXD_PIN (GPIO_NUM_3)
@@ -1366,6 +1366,8 @@ sensor_config_t wait_config() {
 }
 
 void app_main(void) {
+    bme_main();
+    return;
     uart_setup();
     sensor_config_t config = wait_config();
     if (config.selected_sensor == 0) {

@@ -5,4 +5,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+list(APPEND EXTRA_COMPONENT_DIRS "./components")
+set(COMPONENTS main bme688)
+set(SRCS "main.c")
 project(main)
