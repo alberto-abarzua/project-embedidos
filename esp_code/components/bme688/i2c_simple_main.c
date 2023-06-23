@@ -33,8 +33,7 @@
 /*                         Test code                                   */
 /***********************************************************************/
 
-esp_err_t i2c_init(void)
-{
+esp_err_t i2c_init(void) {
     int i2c_master_port = I2C_NUM_0;
     i2c_config_t conf;
     conf.mode = I2C_MODE_MASTER;
@@ -43,7 +42,7 @@ esp_err_t i2c_init(void)
     conf.scl_io_num = I2C_MASTER_SCL_IO;
     conf.scl_pullup_en = GPIO_PULLUP_DISABLE;
     conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
-    conf.clk_flags = I2C_SCLK_SRC_FLAG_FOR_NOMAL; // 0
+    conf.clk_flags = I2C_SCLK_SRC_FLAG_FOR_NOMAL;  // 0
     i2c_param_config(i2c_master_port, &conf);
     return i2c_driver_install(i2c_master_port, conf.mode, 0, 0, 0);
 }
@@ -110,7 +109,7 @@ esp_err_t bme_read(uint8_t data_addres, uint8_t *data_wr, size_t size,
     return ret;
 }
 
-int bme_main(void) {
+int bme_main(uint8_t op_mode) {
     struct bme68x_dev bme;
     int8_t rslt;
     struct bme68x_conf conf;
@@ -178,49 +177,33 @@ int bme_main(void) {
     heatr_conf.heatr_temp_prof = temp_prof;
     heatr_conf.heatr_dur_prof = dur_prof;
     heatr_conf.profile_len = 10;
-    rslt = bme68x_set_heatr_conf(BME68X_SEQUENTIAL_MODE, &heatr_conf, &bme);
+    rslt = bme68x_set_heatr_conf(op_mode, &heatr_conf, &bme);
     // bme68x_check_rslt("bme68x_set_heatr_conf", rslt);
     if (rslt != BME68X_OK) {
         printf("bme68x_set_heatr_conf failed\n");
         return 0;
     }
 
-
-    /* Check if rslt == BME68X_OK, report or handle if otherwise */
-    rslt = bme68x_set_op_mode(BME68X_SEQUENTIAL_MODE, &bme);
+    rslt = bme68x_set_op_mode(op_mode, &bme);
 
     if (rslt != BME68X_OK) {
         printf("bme68x_set_op_mode failed\n");
         return 0;
     }
-    // bme68x_check_rslt("bme68x_set_op_mode", rslt);
 
-    /* Check if rslt == BME68X_OK, report or handle if otherwise */
     printf(
         "Sample, TimeStamp(ms), Temperature(deg C), Pressure(Pa), "
         "Humidity(%%), Gas resistance(ohm), Status, Profile index, Measurement "
         "index\n");
     while (sample_count <= SAMPLE_COUNT) {
-        printf("calling bme68x_get_meas_dur\n");
-        /* Calculate delay period in microseconds */
-        del_period = bme68x_get_meas_dur(BME68X_SEQUENTIAL_MODE, &conf, &bme) +
+        del_period = bme68x_get_meas_dur(op_mode, &conf, &bme) +
                      (heatr_conf.heatr_dur_prof[0] * 1000);
-        printf("del_period = %lu\n", del_period);
-
-        printf("calling bme_delay_us\n");
         bme.delay_us(del_period, bme.intf_ptr);
-        printf("calling bme68x_get_data\n");
         time_ms = (esp_timer_get_time() / 1000);
 
-        rslt = bme68x_get_data(BME68X_SEQUENTIAL_MODE, data, &n_fields, &bme);
-        
-        // bme68x_check_rslt("bme68x_get_data", rslt);
-        // print result
-        printf("rslt = %d\n", rslt);
-        printf("n_fields = %d\n", n_fields);
+        rslt = bme68x_get_data(op_mode, data, &n_fields, &bme);
+
         int bme_ok = (rslt == BME68X_OK);
-        printf("bme_ok = %d\n", bme_ok);
-        /* Check if rslt == BME68X_OK, report or handle if otherwise */
         for (uint8_t i = 0; i < n_fields; i++) {
             printf("%u, %lu, %.2f, %.2f, %.2f, %.2f, 0x%x, %d, %d\n",
                    sample_count,
@@ -233,7 +216,6 @@ int bme_main(void) {
         }
     }
 
-    // bme68x_coines_deinit();
 
     return 0;
 }
