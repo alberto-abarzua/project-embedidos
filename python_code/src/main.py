@@ -1,6 +1,7 @@
-from PyQt5 import QtCore, QtWidgets
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+from PyQt5 import QtCore, QtWidgets
+from PyQt5.QtCore import QObject, QThread, pyqtSignal
 from utils.serial_coms import EspSerialComs, SensorsConfig
 
 
@@ -104,7 +105,7 @@ class Ui_Frame(object):
         self.label_3.setText(_translate("Frame", "gyr_sens"))
         self.label_4.setText(_translate("Frame", "gyr_odr"))
         self.groupBox_3.setTitle(_translate("Frame", "Datos"))
-        self.acc_odr.setProperty("value",10 )
+        self.acc_odr.setProperty("value", 10)
         self.acc_sens.setProperty("value", 2)
         self.spinBox_4.setProperty("value", 0)
         self.spinBox_3.setProperty("value", 10)
@@ -131,15 +132,11 @@ class MyApplication(QtWidgets.QDialog):
         self.canvas2 = FigureCanvas(self.figure2)
         self.ui.gridLayout.addWidget(self.canvas2, 1, 0, 1, 1)
 
-        self.timer = QtCore.QTimer(self)
-        self.timer.timeout.connect(self.update_graphs)
-        self.timer.start(300)  # 300 ms
 
         self.ui.comboBox_5.installEventFilter(self)
         self.ui.comboBox_4.installEventFilter(self)
         self.data_values = {
-            "acc-m/s2":
-            {
+            "acc-m/s2": {
                 "acc_x": [],
                 "acc_z": [],
                 "acc_y": [],
@@ -148,15 +145,12 @@ class MyApplication(QtWidgets.QDialog):
                 "acc_y": [],
                 "acc_z": [],
                 "acc_x": [],
-
             },
             "gyr-dps": {
                 "gyr_x": [],
                 "gyr_y": [],
                 "gyr_z": [],
-            }
-
-
+            },
         }
         self.graph1_data_src = None
         self.graph2_data_src = None
@@ -171,13 +165,37 @@ class MyApplication(QtWidgets.QDialog):
 
         # -------------------- Serial Coms
         self.serial_coms = None
+        self.running = False
         #
+        self.start_get_data_thread()
+
+    class Worker(QtCore.QObject):
+        def __init__(self,target_function):
+            super().__init__()
+            self.target_function = target_function
+
+        def run(self):
+            while True:
+               self.target_function()
+
+
+  
+    def start_get_data_thread(self):
+        self.thread = QtCore.QThread()
+        self.worker = self.Worker(self.update_graphs)
+        self.worker.moveToThread(self.thread)
+        self.thread.started.connect(self.worker.run)
+        self.thread.start()
+
+
     def update_data_combo(self):
         self.graph2_data_src = self.ui.comboBox_4.currentText()
         self.graph1_data_src = self.ui.comboBox_5.currentText()
 
     def eventFilter(self, obj, event):
-        if (obj == self.ui.comboBox_5 or obj == self.ui.comboBox_4) and event.type() == QtCore.QEvent.MouseButtonPress:
+        if (
+            obj == self.ui.comboBox_5 or obj == self.ui.comboBox_4
+        ) and event.type() == QtCore.QEvent.MouseButtonPress:
             self.update_data_sources()
         return super().eventFilter(obj, event)
 
@@ -200,8 +218,7 @@ class MyApplication(QtWidgets.QDialog):
         self.serial_coms = EspSerialComs()
         if not self.serial_coms.connected:
             error_message = "No serial port found. Please connect the device."
-            QtWidgets.QMessageBox.critical(
-                self, "Serial Port Not Found", error_message)
+            QtWidgets.QMessageBox.critical(self, "Serial Port Not Found", error_message)
             self.serial_coms = None
             return
         # configure sensors
@@ -210,7 +227,6 @@ class MyApplication(QtWidgets.QDialog):
             selected_sensor_value = 0
         elif selected_sensor == "BME688":
             selected_sensor_value = 1
-
 
         bme_mode = self.ui.comboBox.currentText()
         bme_mode_value = 0
@@ -224,14 +240,14 @@ class MyApplication(QtWidgets.QDialog):
             int(self.ui.spinBox_4.value()),
             int(self.ui.spinBox_3.value()),
             int(bme_mode_value),
-            int(selected_sensor_value)
+            int(selected_sensor_value),
         )
         print(sensors_config)
-        success = self.serial_coms.config_sensors(
-            sensors_config, self.ui.progressBar)
+        success = self.serial_coms.config_sensors(sensors_config, self.ui.progressBar)
         if not success:
-            QtWidgets.QMessageBox.critical(
-                self, "Serial Port Not Found", error_message)
+            QtWidgets.QMessageBox.critical(self, "Serial Port Not Found", error_message)
+        else:
+            self.running = True
         # start data acquisition
 
     def on_sensor_change(self, index):
@@ -257,7 +273,7 @@ class MyApplication(QtWidgets.QDialog):
         print(data_bmi270)
 
     def update_graphs(self):
-        if self.serial_coms is None or not self.serial_coms.connected:
+        if self.serial_coms is None or not self.serial_coms.connected or not self.running:
             return
         self.get_data()
 
@@ -265,13 +281,12 @@ class MyApplication(QtWidgets.QDialog):
             return
         # get the last 100 values for each
 
-        graph1_data ={}
+        graph1_data = {}
         for key, item in self.data_values[self.graph1_data_src].items():
             graph1_data[key] = item[-100:]
         graph2_data = {}
         for key, item in self.data_values[self.graph2_data_src].items():
             graph2_data[key] = item[-100:]
-
 
         first_key = list(graph1_data.keys())[0]
         x_data = [i for i in range(len(graph1_data[first_key]))]
@@ -279,13 +294,13 @@ class MyApplication(QtWidgets.QDialog):
         self.figure1.clear()
         self.figure2.clear()
 
-        self.create_graph_data(self.figure1,self.graph1_data_src, x_data, graph1_data)
-        self.create_graph_data(self.figure2,self.graph2_data_src, x_data, graph2_data)
+        self.create_graph_data(self.figure1, self.graph1_data_src, x_data, graph1_data)
+        self.create_graph_data(self.figure2, self.graph2_data_src, x_data, graph2_data)
 
         self.canvas1.draw()
         self.canvas2.draw()
 
-    def create_graph_data(self, figure,name, x_data, y_data):
+    def create_graph_data(self, figure, name, x_data, y_data):
         axes = figure.add_subplot(111)
         for key, values in y_data.items():
             axes.plot(x_data, values, label=key)
