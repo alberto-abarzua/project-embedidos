@@ -1,8 +1,6 @@
-import random
 from PyQt5 import QtCore, QtWidgets
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-import serial.tools.list_ports
 from utils.serial_coms import EspSerialComs, SensorsConfig
 
 
