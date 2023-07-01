@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "bme68x.h"
 #include "driver/i2c.h"
 #include "driver/uart.h"
 #include "esp_log.h"
@@ -8,7 +9,6 @@
 #include "freertos/task.h"
 #include "math.h"
 #include "sdkconfig.h"
-#include "bme68x.h"
 #define BUF_SIZE (124)
 #define TXD_PIN (GPIO_NUM_1)
 #define RXD_PIN (GPIO_NUM_3)
@@ -74,6 +74,18 @@ uint8_t REG_ANYMO_2 = 0x3E;  // Registro para activar anymotion
 #define REDIRECT_LOGS 1  // set to 0 to view logs on UART0
 static const char *TAG = "BMI270 example";
 
+
+typedef struct sensor_config {
+    uint8_t acc_odr;
+    uint8_t acc_range;
+    uint8_t gyr_odr;
+    uint8_t gyr_range;
+    uint8_t bme_mode;
+    uint8_t selected_sensor;
+    uint8_t bmi_power_mode;
+    uint8_t bmi_any_motion_mode;
+} sensor_config_t;
+
 //=============================================================================
 //                              Serial comunication functions
 //=============================================================================
@@ -102,7 +114,9 @@ static void uart_setup() {
     uart_driver_install(UART_NUM_1, BUF_SIZE * 2, 0, 0, NULL, 0);
 
     // Redirect ESP log to UART1
-    if (REDIRECT_LOGS) esp_log_set_vprintf(uart1_printf);
+    if (REDIRECT_LOGS) {
+        esp_log_set_vprintf(uart1_printf);
+    }
 }
 
 int serial_read(char *buffer) {
@@ -131,14 +145,16 @@ int serial_read(char *buffer) {
 }
 
 int serial_write(const char *to_send, int len) {
-    char *to_send_with_semicolon = (char *)malloc(sizeof(char) * (len + 1)); // Extra space for the semicolon
-    memcpy(to_send_with_semicolon, to_send, len); // Copy the original data
-    to_send_with_semicolon[len] = '\0'; 
-    int txBytes = uart_write_bytes(UART_NUM_0, to_send_with_semicolon, len + 1); // len + 1 to include the semicolon
+    char *to_send_with_semicolon = (char *)malloc(
+        sizeof(char) * (len + 1));  // Extra space for the semicolon
+    memcpy(to_send_with_semicolon, to_send, len);  // Copy the original data
+    to_send_with_semicolon[len] = '\0';
+    int txBytes =
+        uart_write_bytes(UART_NUM_0, to_send_with_semicolon,
+                         len + 1);  // len + 1 to include the semicolon
     free(to_send_with_semicolon);
     return txBytes;
 }
-
 
 //=============================================================================
 //                              BMI270 functions
@@ -1210,16 +1226,17 @@ esp_err_t setup_anymotion(uint8_t mode) {
 //                             MAIN LOOP
 //=============================================================================
 
-float accel_raw_to_ms2(int16_t raw) {
-    return (pow(2, SENSOR_ACC_RANGE + 1) * ACCEL_RAW_TO_MS2) * raw;
+float accel_raw_to_ms2(int16_t raw,sensor_config_t * config) {
+
+    return (pow(2, config->acc_range + 1) * ACCEL_RAW_TO_MS2) * raw;
 }
 
-float accel_raw_to_g(int16_t raw) {
-    return (pow(2, SENSOR_ACC_RANGE + 1) * ACCEL_RAW_TO_G) * raw;
+float accel_raw_to_g(int16_t raw,sensor_config_t * config) {
+    return (pow(2, config->acc_range + 1) * ACCEL_RAW_TO_G) * raw;
 }
-float gyr_raw_to_rads(int16_t raw) {
+float gyr_raw_to_rads(int16_t raw,sensor_config_t * config) {
     int values[] = {2000.0, 1000.0, 500.0, 250.0, 125.0};
-    return values[SENSOR_GYR_RANGE] * GYR_RAW_TO_RADS * raw;
+    return values[config->gyr_range] * GYR_RAW_TO_RADS * raw;
 }
 uint16_t combine_bytes(uint8_t msb, uint8_t lsb) {
     return ((uint16_t)msb << 8) | lsb;
@@ -1242,11 +1259,12 @@ int anymotion_detected() {
     return res;
 }
 
-void print_data(char * buf) {
+void print_data(char *buf,sensor_config_t * config) {
     esp_err_t ret = ESP_OK;
     uint8_t data_data8[12];
     uint16_t acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z;
-    float f_acc_x, f_acc_y, f_acc_z, f_gyr_x, f_gyr_y, f_gyr_z,f_acc_x_g,f_acc_y_g,f_acc_z_g;
+    float f_acc_x, f_acc_y, f_acc_z, f_gyr_x, f_gyr_y, f_gyr_z, f_acc_x_g,
+        f_acc_y_g, f_acc_z_g;
     ret = bmi_read(I2C_BMI_NUM, &REG_DATA_8, (uint8_t *)data_data8,
                    sizeof(data_data8));
     acc_x = combine_bytes(data_data8[1], data_data8[0]);
@@ -1256,17 +1274,17 @@ void print_data(char * buf) {
     gyr_y = combine_bytes(data_data8[9], data_data8[8]);
     gyr_z = combine_bytes(data_data8[11], data_data8[10]);
 
-    f_acc_x = accel_raw_to_ms2((int16_t)acc_x);
-    f_acc_y = accel_raw_to_ms2((int16_t)acc_y);
-    f_acc_z = accel_raw_to_ms2((int16_t)acc_z);
+    f_acc_x = accel_raw_to_ms2((int16_t)acc_x,config);
+    f_acc_y = accel_raw_to_ms2((int16_t)acc_y,config);
+    f_acc_z = accel_raw_to_ms2((int16_t)acc_z,config);
 
-    f_acc_x_g = accel_raw_to_g((int16_t)acc_x);
-    f_acc_y_g = accel_raw_to_g((int16_t)acc_y);
-    f_acc_z_g = accel_raw_to_g((int16_t)acc_z);
+    f_acc_x_g = accel_raw_to_g((int16_t)acc_x,config);
+    f_acc_y_g = accel_raw_to_g((int16_t)acc_y,config);
+    f_acc_z_g = accel_raw_to_g((int16_t)acc_z,config);
 
-    f_gyr_x = gyr_raw_to_rads((int16_t)gyr_x);
-    f_gyr_y = gyr_raw_to_rads((int16_t)gyr_y);
-    f_gyr_z = gyr_raw_to_rads((int16_t)gyr_z);
+    f_gyr_x = gyr_raw_to_rads((int16_t)gyr_x,config);
+    f_gyr_y = gyr_raw_to_rads((int16_t)gyr_y,config);
+    f_gyr_z = gyr_raw_to_rads((int16_t)gyr_z,config);
 
     ESP_LOGI(TAG,
              "AcC: (%.2f, %.2f, %.2f) m/s² (%.2f, %.2f, %.2f) g |  Gy: (%.2f, "
@@ -1279,7 +1297,7 @@ void print_data(char * buf) {
     }
 
     int len;
-   
+
     len = serial_read(buf);
     if (len > 0) {
         if (buf[0] == 'G' && buf[1] == 'A') {  // get acc
@@ -1291,7 +1309,7 @@ void print_data(char * buf) {
             loc += 4;
             memcpy(buf + loc, &f_acc_z, 4);
             loc += 4;
-            
+
             memcpy(buf + loc, &f_acc_x_g, 4);
             loc += 4;
             memcpy(buf + loc, &f_acc_y_g, 4);
@@ -1306,30 +1324,21 @@ void print_data(char * buf) {
             memcpy(buf + loc, &f_gyr_z, 4);
             loc += 4;
             serial_write(buf, loc);
-
         }
-
     }
 }
 
-void reading_loop(void) {
-     char * buf = malloc(BUF_SIZE);
+void reading_loop(sensor_config_t * config) {
+    char *buf = malloc(BUF_SIZE);
     while (1) {
         if (is_data_ready()) {
             anymotion_detected();
-            print_data(buf);
+            print_data(buf,config);
         }
     }
 }
 
-typedef struct sensor_config {
-    uint8_t acc_odr;
-    uint8_t acc_range;
-    uint8_t gyr_odr;
-    uint8_t gyr_range;
-    uint8_t bme_mode;
-    uint8_t selected_sensor;
-} sensor_config_t;
+
 
 void print_conf(sensor_config_t config) {
     ESP_LOGI(TAG,
@@ -1357,7 +1366,8 @@ sensor_config_t wait_config() {
                 config.gyr_odr = buf[5];
                 config.bme_mode = buf[6];
                 config.selected_sensor = buf[7];
-                print_conf(config);
+                config.bmi_power_mode = SENSOR_POWER_MODE;
+                config.bmi_any_motion_mode = SENSOR_ANYMOTION_MODE;
                 break;
             }
         }
@@ -1365,9 +1375,19 @@ sensor_config_t wait_config() {
     return config;
 }
 
+void print_config(sensor_config_t *config) {
+    ESP_LOGI(TAG,
+             "Config: acc_odr: %d, acc_range: %d, gyr_odr: %d, gyr_range: %d, "
+             "bme_mode: %d\n",
+             config->acc_odr, config->acc_range, config->gyr_odr,
+             config->gyr_range, config->bme_mode);
+}
+
 void app_main(void) {
     uart_setup();
     sensor_config_t config = wait_config();
+
+
     if (config.selected_sensor == 0) {
         serial_write("CF10", 4);
         ESP_ERROR_CHECK(bmi_init());
@@ -1378,7 +1398,7 @@ void app_main(void) {
         ESP_ERROR_CHECK(initialization());
         ESP_ERROR_CHECK(set_power_mode(SENSOR_POWER_MODE));
         serial_write("CF65", 4);
-        //printf to uart0
+        // printf to uart0
         ESP_ERROR_CHECK(set_acc_odr(config.acc_odr));
         ESP_ERROR_CHECK(set_acc_range(config.acc_range));
         serial_write("CF80", 4);
@@ -1391,13 +1411,12 @@ void app_main(void) {
         // ESP_ERROR_CHECK(setup_anymotion(SENSOR_ANYMOTION_MODE));
         internal_status();
         ESP_LOGI(TAG, "Started reading\n");
-        reading_loop();
-    }else{
+        reading_loop(&config);
+    } else {
         uint8_t op_mode = BME68X_PARALLEL_MODE;
-        if (config.bme_mode == 1) { //Forced
+        if (config.bme_mode == 1) {  // Forced
             op_mode = BME68X_FORCED_MODE;
         }
         bme_main(op_mode);
-
     }
 }
