@@ -109,6 +109,13 @@ esp_err_t bme_read(uint8_t data_addres, uint8_t *data_wr, size_t size,
     return ret;
 }
 
+/* Macro for count of samples to be displayed */
+#define SAMPLE_COUNT UINT8_C(300)
+
+/***********************************************************************/
+/*                         Test code                                   */
+/***********************************************************************/
+
 int bme_main(uint8_t op_mode) {
     struct bme68x_dev bme;
     int8_t rslt;
@@ -120,19 +127,6 @@ int bme_main(uint8_t op_mode) {
     uint8_t n_fields;
     uint16_t sample_count = 1;
 
-    ESP_ERROR_CHECK(i2c_init());
-
-    bme.read = bme_read;
-    bme.write = bme_write;
-    bme.delay_us = bme_delay_us;
-
-    uint8_t data_wr = 0;
-    uint8_t data_addres = 0xD0;
-    uint8_t *void_point = 0;
-    esp_err_t ret = i2c_read(I2C_NUM_0, &data_addres, &data_wr, 1);
-    printf("i2c_read reg 0xD0h ret = %d\n", ret);
-    printf("data_wr 0xD0h = %d\n", data_wr);
-
     /* Heater temperature in degree Celsius */
     uint16_t temp_prof[10] = {200, 240, 280, 320, 360, 360, 320, 280, 240, 200};
 
@@ -143,20 +137,16 @@ int bme_main(uint8_t op_mode) {
      * For I2C : BME68X_I2C_INTF
      * For SPI : BME68X_SPI_INTF
      */
-    // rslt = bme68x_interface_init(&bme, BME68X_I2C_INTF);
-    // bme68x_check_rslt("bme68x_interface_init", rslt);
+    ESP_ERROR_CHECK(i2c_init());
+
+    bme.read = bme_read;
+    bme.write = bme_write;
+    bme.delay_us = bme_delay_us;
 
     rslt = bme68x_init(&bme);
-    // check rslt
-    if (rslt != BME68X_OK) {
-        printf("bme68x_init failed\n");
-        return 0;
-    }
-    // bme68x_check_rslt("bme68x_init", rslt);
 
     /* Check if rslt == BME68X_OK, report or handle if otherwise */
     rslt = bme68x_get_conf(&conf, &bme);
-    // bme68x_check_rslt("bme68x_get_conf", rslt);
 
     /* Check if rslt == BME68X_OK, report or handle if otherwise */
     conf.filter = BME68X_FILTER_OFF;
@@ -166,52 +156,49 @@ int bme_main(uint8_t op_mode) {
     conf.os_pres = BME68X_OS_1X;
     conf.os_temp = BME68X_OS_2X;
     rslt = bme68x_set_conf(&conf, &bme);
-    // bme68x_check_rslt("bme68x_set_conf", rslt);
-    if (rslt != BME68X_OK) {
-        printf("bme68x_set_conf failed\n");
-        return 0;
-    }
 
     /* Check if rslt == BME68X_OK, report or handle if otherwise */
     heatr_conf.enable = BME68X_ENABLE;
     heatr_conf.heatr_temp_prof = temp_prof;
     heatr_conf.heatr_dur_prof = dur_prof;
     heatr_conf.profile_len = 10;
-    rslt = bme68x_set_heatr_conf(op_mode, &heatr_conf, &bme);
-    // bme68x_check_rslt("bme68x_set_heatr_conf", rslt);
-    if (rslt != BME68X_OK) {
-        printf("bme68x_set_heatr_conf failed\n");
-        return 0;
-    }
+    rslt = bme68x_set_heatr_conf(BME68X_SEQUENTIAL_MODE, &heatr_conf, &bme);
 
-    rslt = bme68x_set_op_mode(op_mode, &bme);
+    /* Check if rslt == BME68X_OK, report or handle if otherwise */
+    rslt = bme68x_set_op_mode(BME68X_SEQUENTIAL_MODE, &bme);
 
-    if (rslt != BME68X_OK) {
-        printf("bme68x_set_op_mode failed\n");
-        return 0;
-    }
-
+    /* Check if rslt == BME68X_OK, report or handle if otherwise */
     printf(
         "Sample, TimeStamp(ms), Temperature(deg C), Pressure(Pa), "
         "Humidity(%%), Gas resistance(ohm), Status, Profile index, Measurement "
         "index\n");
     while (sample_count <= SAMPLE_COUNT) {
-        del_period = bme68x_get_meas_dur(op_mode, &conf, &bme) +
+        /* Calculate delay period in microseconds */
+        del_period = bme68x_get_meas_dur(BME68X_SEQUENTIAL_MODE, &conf, &bme) +
                      (heatr_conf.heatr_dur_prof[0] * 1000);
         bme.delay_us(del_period, bme.intf_ptr);
-        time_ms = (esp_timer_get_time() / 1000);
 
-        rslt = bme68x_get_data(op_mode, data, &n_fields, &bme);
 
-        int bme_ok = (rslt == BME68X_OK);
+        rslt = bme68x_get_data(BME68X_SEQUENTIAL_MODE, data, &n_fields, &bme);
+
+        /* Check if rslt == BME68X_OK, report or handle if otherwise */
         for (uint8_t i = 0; i < n_fields; i++) {
+#ifdef BME68X_USE_FPU
             printf("%u, %lu, %.2f, %.2f, %.2f, %.2f, 0x%x, %d, %d\n",
                    sample_count,
                    (long unsigned int)time_ms + (i * (del_period / 2000)),
                    data[i].temperature, data[i].pressure, data[i].humidity,
                    data[i].gas_resistance, data[i].status, data[i].gas_index,
                    data[i].meas_index);
-
+#else
+            printf("%u, %lu, %d, %lu, %lu, %lu, 0x%x, %d, %d\n", sample_count,
+                   (long unsigned int)time_ms + (i * (del_period / 2000)),
+                   (data[i].temperature / 100),
+                   (long unsigned int)data[i].pressure,
+                   (long unsigned int)(data[i].humidity / 1000),
+                   (long unsigned int)data[i].gas_resistance, data[i].status,
+                   data[i].gas_index, data[i].meas_index);
+#endif
             sample_count++;
         }
     }
