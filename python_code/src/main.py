@@ -1,7 +1,7 @@
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtCore import QObject, QThread, pyqtSignal
+
 from utils.serial_coms import EspSerialComs, SensorsConfig
 
 
@@ -132,7 +132,6 @@ class MyApplication(QtWidgets.QDialog):
         self.canvas2 = FigureCanvas(self.figure2)
         self.ui.gridLayout.addWidget(self.canvas2, 1, 0, 1, 1)
 
-
         self.ui.comboBox_5.installEventFilter(self)
         self.ui.comboBox_4.installEventFilter(self)
         self.data_values = {
@@ -170,23 +169,20 @@ class MyApplication(QtWidgets.QDialog):
         self.start_get_data_thread()
 
     class Worker(QtCore.QObject):
-        def __init__(self,target_function):
+        def __init__(self, target_function):
             super().__init__()
             self.target_function = target_function
 
         def run(self):
             while True:
-               self.target_function()
+                self.target_function()
 
-
-  
     def start_get_data_thread(self):
         self.thread = QtCore.QThread()
         self.worker = self.Worker(self.update_graphs)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.thread.start()
-
 
     def update_data_combo(self):
         self.graph2_data_src = self.ui.comboBox_4.currentText()
@@ -202,16 +198,35 @@ class MyApplication(QtWidgets.QDialog):
     def update_data_sources(self):
         print("update data sources")
         print(self.data_values)
-        # claer items
-        self.ui.comboBox_4.clear()
-        self.ui.comboBox_5.clear()
-        for key, item in self.data_values.items():
-            if len(item) > 0:
-                self.ui.comboBox_4.addItem(key)
-                self.ui.comboBox_5.addItem(key)
+        # current values
+        current_options_comb4 = [
+            self.ui.comboBox_4.itemText(i) for i in range(self.ui.comboBox_4.count())
+        ]
+        current_options_comb5 = [
+            self.ui.comboBox_5.itemText(i) for i in range(self.ui.comboBox_5.count())
+        ]
+        # make them set
+        current_options_comb4 = set(current_options_comb4)
+        current_options_comb5 = set(current_options_comb5)
 
-        self.graph1_data_src = self.ui.comboBox_4.currentText()
-        self.graph2_data_src = self.ui.comboBox_5.currentText()
+        new_data_values = set(self.data_values.keys())
+
+        # if there are differences
+        if (
+            current_options_comb4 != new_data_values
+            or current_options_comb5 != new_data_values
+        ):
+            self.ui.comboBox_4.clear()
+            self.ui.comboBox_5.clear()
+
+            for key, item in self.data_values.items():
+                if len(item) > 0:
+                    self.ui.comboBox_4.addItem(key)
+                    self.ui.comboBox_5.addItem(key)
+            # set back the current values
+
+            self.graph1_data_src = self.ui.comboBox_4.currentText()
+            self.graph2_data_src = self.ui.comboBox_5.currentText()
 
     def on_click_start_coms(self):
         # try connection
@@ -273,7 +288,11 @@ class MyApplication(QtWidgets.QDialog):
         print(data_bmi270)
 
     def update_graphs(self):
-        if self.serial_coms is None or not self.serial_coms.connected or not self.running:
+        if (
+            self.serial_coms is None
+            or not self.serial_coms.connected
+            or not self.running
+        ):
             return
         self.get_data()
 
