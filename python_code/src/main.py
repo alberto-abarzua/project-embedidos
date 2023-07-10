@@ -117,6 +117,9 @@ class Ui_Frame(object):
 
 
 class MyApplication(QtWidgets.QDialog):
+
+    BMI_SELECTED = 0
+    BME_SELECTED = 1
     def __init__(self):
         super().__init__()
 
@@ -150,6 +153,19 @@ class MyApplication(QtWidgets.QDialog):
                 "gyr_y": [],
                 "gyr_z": [],
             },
+            "temperature": {
+                "temp": [],
+            },
+            "humidity": {
+                "hum": [],
+            },
+            "pressure": {
+                "pres": [],
+            },
+            "gas": {
+                "gas": [],
+            },
+
         }
         self.graph1_data_src = None
         self.graph2_data_src = None
@@ -165,6 +181,7 @@ class MyApplication(QtWidgets.QDialog):
         # -------------------- Serial Coms
         self.serial_coms = None
         self.running = False
+        self.data_sources_created = False
         #
         self.start_get_data_thread()
 
@@ -196,9 +213,10 @@ class MyApplication(QtWidgets.QDialog):
         return super().eventFilter(obj, event)
 
     def update_data_sources(self):
-        print("update data sources")
-        print(self.data_values)
+        if self.data_sources_created:
+            return
         # current values
+        print("updating data sources")
         current_options_comb4 = [
             self.ui.comboBox_4.itemText(i) for i in range(self.ui.comboBox_4.count())
         ]
@@ -209,7 +227,15 @@ class MyApplication(QtWidgets.QDialog):
         current_options_comb4 = set(current_options_comb4)
         current_options_comb5 = set(current_options_comb5)
 
-        new_data_values = set(self.data_values.keys())
+        new_data_values = set()
+        for key ,value in self.data_values.items():
+            for value in value.values():
+                # check length of list
+                if len(value) > 0:
+                    new_data_values.add(key)
+                    break
+        
+            
 
         # if there are differences
         if (
@@ -227,6 +253,8 @@ class MyApplication(QtWidgets.QDialog):
 
             self.graph1_data_src = self.ui.comboBox_4.currentText()
             self.graph2_data_src = self.ui.comboBox_5.currentText()
+            self.data_sources_created = True
+        
 
     def on_click_start_coms(self):
         # try connection
@@ -239,9 +267,11 @@ class MyApplication(QtWidgets.QDialog):
         # configure sensors
         selected_sensor = self.ui.comboBox_2.currentText()
         if selected_sensor == "BMI270":
-            selected_sensor_value = 0
+            selected_sensor_value = self.BMI_SELECTED
         elif selected_sensor == "BME688":
-            selected_sensor_value = 1
+            selected_sensor_value = self.BME_SELECTED
+
+        self.selected_sensor = selected_sensor_value
 
         bme_mode = self.ui.comboBox.currentText()
         bme_mode_value = 0
@@ -260,33 +290,38 @@ class MyApplication(QtWidgets.QDialog):
         print(sensors_config)
         success = self.serial_coms.config_sensors(sensors_config, self.ui.progressBar)
         if not success:
-            QtWidgets.QMessageBox.critical(self, "Serial Port Not Found", error_message)
+            QtWidgets.QMessageBox.critical(self, "Serial Port Not Found", "error")
         else:
             self.running = True
         # start data acquisition
 
     def on_sensor_change(self, index):
         selected_item = self.ui.comboBox_2.currentText()
-        print("here")
-        print(selected_item)
         if selected_item == "BMI270":
             print("BMI270 selected")
         elif selected_item == "BME688":
             print("BME688 selected")
 
     def get_data(self):
-        data_bmi270 = self.serial_coms.get_data_bmi270()
-        self.data_values["acc-m/s2"]["acc_x"].append(data_bmi270[0])
-        self.data_values["acc-m/s2"]["acc_y"].append(data_bmi270[1])
-        self.data_values["acc-m/s2"]["acc_z"].append(data_bmi270[2])
-        self.data_values["acc-g"]["acc_x"].append(data_bmi270[3])
-        self.data_values["acc-g"]["acc_y"].append(data_bmi270[4])
-        self.data_values["acc-g"]["acc_z"].append(data_bmi270[5])
-        self.data_values["gyr-dps"]["gyr_x"].append(data_bmi270[6])
-        self.data_values["gyr-dps"]["gyr_y"].append(data_bmi270[7])
-        self.data_values["gyr-dps"]["gyr_z"].append(data_bmi270[8])
-        print(data_bmi270)
-
+        if self.selected_sensor == self.BMI_SELECTED:
+            data_bmi270 = self.serial_coms.get_data_bmi270()
+            self.data_values["acc-m/s2"]["acc_x"].append(data_bmi270[0])
+            self.data_values["acc-m/s2"]["acc_y"].append(data_bmi270[1])
+            self.data_values["acc-m/s2"]["acc_z"].append(data_bmi270[2])
+            self.data_values["acc-g"]["acc_x"].append(data_bmi270[3])
+            self.data_values["acc-g"]["acc_y"].append(data_bmi270[4])
+            self.data_values["acc-g"]["acc_z"].append(data_bmi270[5])
+            self.data_values["gyr-dps"]["gyr_x"].append(data_bmi270[6])
+            self.data_values["gyr-dps"]["gyr_y"].append(data_bmi270[7])
+            self.data_values["gyr-dps"]["gyr_z"].append(data_bmi270[8])
+            print(data_bmi270)
+        elif self.selected_sensor == self.BME_SELECTED:
+            data_bme688 = self.serial_coms.get_data_bme688()
+            self.data_values["temperature"]["temp"].append(data_bme688[0])
+            self.data_values["humidity"]["hum"].append(data_bme688[1])
+            self.data_values["pressure"]["pres"].append(data_bme688[2])
+            self.data_values["gas"]["gas"].append(data_bme688[3])
+            print(data_bme688)
     def update_graphs(self):
         if (
             self.serial_coms is None
@@ -307,14 +342,16 @@ class MyApplication(QtWidgets.QDialog):
         for key, item in self.data_values[self.graph2_data_src].items():
             graph2_data[key] = item[-100:]
 
-        first_key = list(graph1_data.keys())[0]
-        x_data = [i for i in range(len(graph1_data[first_key]))]
+        first_key1 = list(graph1_data.keys())[0]
+        first_key2 = list(graph2_data.keys())[0]
+        x_data1 = [i for i in range(len(graph1_data[first_key1]))]
+        x_data2 = [i for i in range(len(graph2_data[first_key2]))]
 
         self.figure1.clear()
         self.figure2.clear()
 
-        self.create_graph_data(self.figure1, self.graph1_data_src, x_data, graph1_data)
-        self.create_graph_data(self.figure2, self.graph2_data_src, x_data, graph2_data)
+        self.create_graph_data(self.figure1, self.graph1_data_src, x_data1, graph1_data)
+        self.create_graph_data(self.figure2, self.graph2_data_src, x_data2, graph2_data)
 
         self.canvas1.draw()
         self.canvas2.draw()
