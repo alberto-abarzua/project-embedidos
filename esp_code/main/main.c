@@ -20,7 +20,7 @@
 // I2C pin configurations
 #define I2C_MASTER_SCL_IO GPIO_NUM_22
 #define I2C_MASTER_SDA_IO GPIO_NUM_21
-#define I2C_BMI_NUM I2C_NUM_0
+#define I2C_BMI_NUM (0)
 // I2C frequency (Hz)
 #define I2C_MASTER_FREQ_HZ 10000
 
@@ -73,7 +73,6 @@ uint8_t REG_ANYMO_2 = 0x3E;  // Registro para activar anymotion
 #define SENSOR_ANYMOTION_MODE CONFIG_ANYMOTION_MODE
 #define REDIRECT_LOGS 1  // set to 0 to view logs on UART0
 static const char *TAG = "BMI270 example";
-
 
 typedef struct sensor_config {
     uint8_t acc_odr;
@@ -883,8 +882,8 @@ esp_err_t bmi_write(i2c_port_t i2c_num, uint8_t *data_addres, uint8_t *data_wr,
     return ret;
 }
 
-esp_err_t bmi_init(void) {
-    int i2c_master_port = I2C_BMI_NUM;
+esp_err_t i2c_init(void) {
+    int i2c_master_port = I2C_NUM_0;
     i2c_config_t conf;
     conf.mode = I2C_MODE_MASTER;
     conf.sda_io_num = I2C_MASTER_SDA_IO;
@@ -1226,15 +1225,14 @@ esp_err_t setup_anymotion(uint8_t mode) {
 //                             MAIN LOOP
 //=============================================================================
 
-float accel_raw_to_ms2(int16_t raw,sensor_config_t * config) {
-
+float accel_raw_to_ms2(int16_t raw, sensor_config_t *config) {
     return (pow(2, config->acc_range + 1) * ACCEL_RAW_TO_MS2) * raw;
 }
 
-float accel_raw_to_g(int16_t raw,sensor_config_t * config) {
+float accel_raw_to_g(int16_t raw, sensor_config_t *config) {
     return (pow(2, config->acc_range + 1) * ACCEL_RAW_TO_G) * raw;
 }
-float gyr_raw_to_rads(int16_t raw,sensor_config_t * config) {
+float gyr_raw_to_rads(int16_t raw, sensor_config_t *config) {
     int values[] = {2000.0, 1000.0, 500.0, 250.0, 125.0};
     return values[config->gyr_range] * GYR_RAW_TO_RADS * raw;
 }
@@ -1259,7 +1257,7 @@ int anymotion_detected() {
     return res;
 }
 
-void print_data(char *buf,sensor_config_t * config) {
+void print_data(char *buf, sensor_config_t *config) {
     esp_err_t ret = ESP_OK;
     uint8_t data_data8[12];
     uint16_t acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z;
@@ -1274,17 +1272,17 @@ void print_data(char *buf,sensor_config_t * config) {
     gyr_y = combine_bytes(data_data8[9], data_data8[8]);
     gyr_z = combine_bytes(data_data8[11], data_data8[10]);
 
-    f_acc_x = accel_raw_to_ms2((int16_t)acc_x,config);
-    f_acc_y = accel_raw_to_ms2((int16_t)acc_y,config);
-    f_acc_z = accel_raw_to_ms2((int16_t)acc_z,config);
+    f_acc_x = accel_raw_to_ms2((int16_t)acc_x, config);
+    f_acc_y = accel_raw_to_ms2((int16_t)acc_y, config);
+    f_acc_z = accel_raw_to_ms2((int16_t)acc_z, config);
 
-    f_acc_x_g = accel_raw_to_g((int16_t)acc_x,config);
-    f_acc_y_g = accel_raw_to_g((int16_t)acc_y,config);
-    f_acc_z_g = accel_raw_to_g((int16_t)acc_z,config);
+    f_acc_x_g = accel_raw_to_g((int16_t)acc_x, config);
+    f_acc_y_g = accel_raw_to_g((int16_t)acc_y, config);
+    f_acc_z_g = accel_raw_to_g((int16_t)acc_z, config);
 
-    f_gyr_x = gyr_raw_to_rads((int16_t)gyr_x,config);
-    f_gyr_y = gyr_raw_to_rads((int16_t)gyr_y,config);
-    f_gyr_z = gyr_raw_to_rads((int16_t)gyr_z,config);
+    f_gyr_x = gyr_raw_to_rads((int16_t)gyr_x, config);
+    f_gyr_y = gyr_raw_to_rads((int16_t)gyr_y, config);
+    f_gyr_z = gyr_raw_to_rads((int16_t)gyr_z, config);
 
     ESP_LOGI(TAG,
              "AcC: (%.2f, %.2f, %.2f) m/s² (%.2f, %.2f, %.2f) g |  Gy: (%.2f, "
@@ -1328,17 +1326,15 @@ void print_data(char *buf,sensor_config_t * config) {
     }
 }
 
-void reading_loop(sensor_config_t * config) {
+void reading_loop(sensor_config_t *config) {
     char *buf = malloc(BUF_SIZE);
     while (1) {
         if (is_data_ready()) {
             anymotion_detected();
-            print_data(buf,config);
+            print_data(buf, config);
         }
     }
 }
-
-
 
 void print_conf(sensor_config_t config) {
     ESP_LOGI(TAG,
@@ -1385,12 +1381,12 @@ void print_config(sensor_config_t *config) {
 
 void app_main(void) {
     uart_setup();
-    sensor_config_t config = wait_config();
 
-
+    sensor_config_t config;
+    config = wait_config();
     if (config.selected_sensor == 0) {
+        ESP_ERROR_CHECK(i2c_init());
         serial_write("CF10", 4);
-        ESP_ERROR_CHECK(bmi_init());
         ESP_ERROR_CHECK(softreset());
         serial_write("CF20", 4);
 
@@ -1413,10 +1409,6 @@ void app_main(void) {
         ESP_LOGI(TAG, "Started reading\n");
         reading_loop(&config);
     } else {
-        uint8_t op_mode = BME68X_PARALLEL_MODE;
-        if (config.bme_mode == 1) {  // Forced
-            op_mode = BME68X_FORCED_MODE;
-        }
-        bme_main(op_mode);
+        bme_main(config.bme_mode);
     }
 }

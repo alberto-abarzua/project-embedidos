@@ -96,7 +96,17 @@ class EspSerialComs:
 
     def get_data_bme688(self):
         if self.config.selected_sensor == 1:
-            pass
+            self.send(b"GB")
+            try:
+                # four floats
+                response = self.ser.read(19)
+                print(len(response))
+                response = response[2:18]
+                data = unpack("ffff", response)
+                return data
+            except Exception as e:
+                print(e)
+                return self.get_data_bme688()
 
     def read(self, in_bytes=False):
         while True:
