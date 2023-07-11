@@ -61,20 +61,20 @@ int serial_write_bme(const char *to_send, int len) {
 void bme680_test(void *pvParameters) {
     bme680_t sensor;
     memset(&sensor, 0, sizeof(bme680_t));
-    // serial_write_bme("CF10", 4);
+    serial_write_bme("CF10", 4);
 
     ESP_ERROR_CHECK(bme680_init_desc(&sensor, BME_ADDR, PORT, I2C_MASTER_SDA_IO,
                                      I2C_MASTER_SCL_IO));
 
     // init the sensor
     ESP_ERROR_CHECK(bme680_init_sensor(&sensor));
-    // serial_write_bme("CF20", 4);
+    serial_write_bme("CF20", 4);
 
     // Changes the oversampling rates to 4x oversampling for temperature
     // and 2x oversampling for humidity. Pressure measurement is skipped.
     bme680_set_oversampling_rates(&sensor, BME680_OSR_4X, BME680_OSR_NONE,
                                   BME680_OSR_2X);
-    // serial_write_bme("CF30", 4);
+    serial_write_bme("CF30", 4);
 
     // Change the IIR filter size for temperature and pressure to 7.
     bme680_set_filter_size(&sensor, BME680_IIR_SIZE_7);
@@ -82,7 +82,7 @@ void bme680_test(void *pvParameters) {
     // Change the heater profile 0 to 200 degree Celsius for 100 ms.
     bme680_set_heater_profile(&sensor, 0, 200, 100);
     bme680_use_heater_profile(&sensor, 0);
-    // serial_write_bme("CF50", 4);
+    serial_write_bme("CF50", 4);
 
     // Set ambient temperature to 10 degree Celsius
     bme680_set_ambient_temperature(&sensor, 10);
@@ -90,7 +90,7 @@ void bme680_test(void *pvParameters) {
     // as long as sensor configuration isn't changed, duration is constant
     uint32_t duration;
     bme680_get_measurement_duration(&sensor, &duration);
-    // serial_write_bme("CF100", 5);
+    serial_write_bme("CF100", 5);
 
     TickType_t last_wakeup = xTaskGetTickCount();
 
