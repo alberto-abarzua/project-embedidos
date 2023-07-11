@@ -68,17 +68,22 @@ class EspSerialComs:
         self.config = sensors_config
         self.send(sensors_config.to_bytes())
         response = ""
-        tries = 5
+        tries = 100
         while tries > 0:
-            response = self.read()
-            # remove "CF"
-            response = response.replace("CF", "")
-            num = int(response)
-            if progresBar is not None:
-                progresBar.setProperty("value", num)
-                if num == 100:
-                    return True
-            tries -= 1
+            try:
+                response = self.read()
+                # remove "CF"
+                response = response.replace("CF", "")
+                num = int(response)
+                if progresBar is not None:
+                    progresBar.setProperty("value", num)
+                    if num == 100:
+                        return True
+                tries -= 1
+            except Exception as e:
+                print(e)
+                tries -= 1
+                time.sleep(0.1)
         return False
 
     def get_data_bmi270(self):
